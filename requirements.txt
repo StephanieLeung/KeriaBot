@@ -1,1 +1,3 @@
 fastapi[all]
+yt_dlp[all]
+urllib3
