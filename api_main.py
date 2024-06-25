@@ -1,5 +1,4 @@
 from fastapi import FastAPI
-from discord import FFmpegPCMAudio
 import yt_dlp
 import urllib.request
 import re
@@ -32,8 +31,4 @@ async def search_youtube(search: str):
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(play_url, download=False)
-        # link = info['url']
-        # source = FFmpegPCMAudio(link, before_options="-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
-        #                         options="-vn")
-        # title = info['title']
     return info
