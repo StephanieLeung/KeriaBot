@@ -24,6 +24,7 @@ async def setup_hook() -> None:
 
 @bot.event
 async def on_ready():
+    await bot.change_presence(status=discord.Status.idle, activity=discord.CustomActivity(name='CHKCHKBOOM'))
     print(f'{bot.user.name} has connected to Discord!')
 
 
