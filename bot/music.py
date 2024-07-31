@@ -1,27 +1,20 @@
 import asyncio
-import json
 import random
 
+import aiohttp
 import discord
 from discord.ext import commands
 from discord import FFmpegPCMAudio
-import requests
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
 import os
 from dotenv import load_dotenv
 
-queue = {}
-title_queue = {}
 voice_state = {}
-voice = None
-now_playing = None
-channel = None
-loop = False
-loop_playlist = False
 main_url = "https://keriabot.onrender.com/"
 test_url = "http://localhost:8000/"
-disc_gif = "https://media0.giphy.com/media/LwBTamVefKJxmYwDba/giphy.gif?cid=6c09b952g0ljvqtoads16f77bd3hpv1cwibrnm3b3pmzyifz&rid=giphy.gif&ct=s"
+disc_gif = ("https://media0.giphy.com/media/LwBTamVefKJxmYwDba/giphy.gif?cid"
+            "=6c09b952g0ljvqtoads16f77bd3hpv1cwibrnm3b3pmzyifz&rid=giphy.gif&ct=s")
 
 load_dotenv()
 CLIENT_ID = os.getenv("SPOTIPY_CLIENT_ID")
@@ -30,7 +23,59 @@ auth_manager = SpotifyClientCredentials(client_id=CLIENT_ID, client_secret=CLIEN
 sp = spotipy.Spotify(auth_manager=auth_manager)
 
 
-def search_youtube(search):
+class MusicObj:
+    def __init__(self, url, title):
+        self.url = url
+        self.title = title
+
+    def make_audio_source(self):
+        if self.url == "../KeriaBot/Animal Crossing  Nabi Bobet Tau.mp3":
+            source = FFmpegPCMAudio(self.url)
+        else:
+            source = FFmpegPCMAudio(self.url,
+                                    before_options="-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -ss "
+                                                   "00:00:00.00",
+                                    options="-vn")
+        return source
+
+
+class BotVoiceHandler:
+    def __init__(self, channel):
+        self.now_playing = None
+        self.voice = None
+        self.channel = channel
+        self.songs = []
+        self.loop = False
+        self.loop_all = False
+
+    def queue(self, song: MusicObj):
+        self.songs.append(song)
+
+    def remove_song(self, index):
+        return self.songs.pop(index)
+
+    def dequeue(self):
+        if self.songs:
+            return self.songs.pop(0)
+        else:
+            return None
+
+    def clear_queue(self):
+        self.songs = []
+
+    def shuffle_queue(self):
+        random.shuffle(self.songs)
+
+    def set_loop_all(self):
+        self.loop_all = not self.loop_all
+        self.loop = False
+
+    def set_loop(self):
+        self.loop = not self.loop
+        self.loop_all = False
+
+
+async def search_youtube(search):
     search = parse_search(search)
     if "http" in search and "youtube" in search:
         search = search.partition("=")[2]
@@ -38,39 +83,13 @@ def search_youtube(search):
     else:
         url = test_url + f"music/{search}"
 
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) '
-                      'Chrome/111.0.0.0 Safari/537.36'}
-    data = requests.get(url, headers=headers)
-
-    if data.ok:
-        info = json.loads(data.content)
-    else:
-        raise Exception()
-    return info['url'], info['title']
+    return await get_song_info(url)
 
 
-def no_search_youtube(search):
+async def no_search_youtube(search):
     search = parse_search(search)
     url = test_url + f"youtube/{search}"
-
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) '
-                      'Chrome/111.0.0.0 Safari/537.36'}
-    data = requests.get(url, headers=headers)
-
-    if data.ok:
-        info = json.loads(data.content)
-    else:
-        raise Exception()
-    return info['url'], info['title']
-
-
-def make_audio_source(link):
-    source = FFmpegPCMAudio(link,
-                            before_options="-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -ss 00:00:00.00",
-                            options="-vn")
-    return source
+    return await get_song_info(url)
 
 
 def parse_search(search):
@@ -81,16 +100,28 @@ def parse_search(search):
         return search
 
 
-def init_loop(id):
-    voice_state[id]['loop_playlist'] = False
-    voice_state[id]['loop'] = False
+async def get_song_info(url):
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as r:
+            if r.status == 200:
+                info = await r.json()
+        await session.close()
+
+    return info['url'], info['title']
+
+
+def check_same_voice_channel(ctx):
+    if ctx.voice_client and ctx.author.voice:
+        return ctx.voice_client.channel.id == ctx.author.voice.channel.id
+    else:
+        return False
 
 
 class Music(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.command()
+    @commands.hybrid_command(name="nabi")
     async def nabi(self, ctx):
         """
         Queues Nabi Bobet Tau directly if user is in voice channel
@@ -99,52 +130,45 @@ class Music(commands.Cog):
         """
         if ctx.author.voice:
             guild_id = ctx.message.guild.id
-            if guild_id not in voice_state:
-                voice_state[guild_id] = {}
-                init_loop(guild_id)
+            bot_handler = BotVoiceHandler(ctx.channel)
 
             if not ctx.voice_client:
-                channel = ctx.message.author.voice.channel
-                voice_state[guild_id]['voice'] = await channel.connect()
-            source = FFmpegPCMAudio("Animal Crossing  Nabi Bobet Tau.mp3")
+                if guild_id not in voice_state:
+                    voice_state[guild_id] = bot_handler
+                bot_handler.voice = await ctx.message.author.voice.channel.connect()
             title = "Nabi Bobet Tau"
+            bot_handler.queue(MusicObj("../KeriaBot/Animal Crossing  Nabi Bobet Tau.mp3", "Nabi Bobet Tau"))
             # testing on one mp3 file
-            if guild_id in queue:
-                queue[guild_id].append(source)
-                title_queue[guild_id].append(title)
-            else:
-                queue[guild_id] = [source]
-                title_queue[guild_id] = [title]
             if ctx.voice_client.is_playing():
                 pass
                 await ctx.send("Added `" + title + "` to queue.")
             else:
-                self.start_playing(ctx)
-                voice_state[guild_id]['now_playing'] = title
-                voice_state[guild_id]['channel'] = ctx.channel
+                bot_handler.now_playing = bot_handler.dequeue()
+                await self.start_playing(ctx)
         else:
             await ctx.send("You must be connected a voice channel for me to join")
 
-    @commands.command(aliases=['dc'])
+    @commands.hybrid_command(name="disconnect", aliases=['dc'])
     async def disconnect(self, ctx):
         """
         Disconnects from the voice channel
         :param ctx: context
         :return:
         """
-        guild_id = ctx.message.guild.id
-
         if ctx.voice_client:
-            voice_state[guild_id]['voice'] = None
-            voice_state[guild_id]['channel'] = None
-            queue.clear()
-            title_queue.clear()
             await ctx.guild.voice_client.disconnect()
             await ctx.send("Disconnected.")
         else:
-            await ctx.send("I'm not in a voice channel")
+            await ctx.send("I'm not in a voice channel.")
 
-    @commands.command(aliases=['p'])
+    @commands.Cog.listener()
+    async def on_voice_state_update(self, member, before, after):
+        if after.channel is None and member == self.bot.user:
+            if member.guild.voice_client is not None:
+                member.guild.voice_client.cleanup()
+            del voice_state[member.guild.id]
+
+    @commands.hybrid_command(aliases=['p'])
     async def play(self, ctx, *, search):
         """
         Plays song given a word search or YouTube/Spotify URL
@@ -152,7 +176,21 @@ class Music(commands.Cog):
         :param search: Search terms/YouTube URL/Spotify URL
         :return:
         """
+        await self.play_search(ctx, search_youtube, search)
+
+    @commands.hybrid_command(name="nonmusicplay", aliases=['nmp'])
+    async def nmp(self, ctx, *, search):
+        """
+        Searches YouTube without specifically looking for music
+        :param ctx: context
+        :param search: Search terms
+        :return:
+        """
+        await self.play_search(ctx, no_search_youtube, search)
+
+    async def play_search(self, ctx, search_type, search):
         guild_id = ctx.message.guild.id
+        bot_handler = BotVoiceHandler(ctx.channel)
 
         if not ctx.author.voice:
             await ctx.send("You must be connected to a voice channel.")
@@ -160,62 +198,39 @@ class Music(commands.Cog):
 
         if not ctx.voice_client:
             if guild_id not in voice_state:
-                voice_state[guild_id] = {}
-                init_loop(guild_id)
-            channel = ctx.message.author.voice.channel
-            voice_state[guild_id]['voice'] = await channel.connect()
+                voice_state[guild_id] = bot_handler
+            voice = await ctx.message.author.voice.channel.connect()
+            bot_handler.voice = voice
 
-        title = self.q(ctx, search)
+        await ctx.defer()
+        song = await self.queue_song(ctx, search_type, search)
         if ctx.voice_client.is_playing():
             pass
-            await ctx.send("Added `" + title + "` to queue.")
+            await ctx.send("Added `" + song.title + "` to queue.")
         else:
-            self.start_playing(ctx)
-            voice_state[guild_id]['now_playing'] = title
-            voice_state[guild_id]['channel'] = ctx.channel
+            bot_handler.now_playing = bot_handler.dequeue()
+            await self.start_playing(ctx)
 
-    @commands.command(aliases=['np'])
-    async def nop(self, ctx, *, search):
-        """
-        Searches YouTube without specifically looking for music
-        :param ctx: context
-        :param search: Search terms
-        :return:
-        """
-        guild_id = ctx.message.guild.id
-
-        if not ctx.author.voice:
-            await ctx.send("You must be connected to a voice channel.")
-            return
-
-        if not ctx.voice_client:
-            channel = ctx.message.author.voice.channel
-            voice_state[guild_id]['voice'] = await channel.connect()
-
-        title = self.noqueue(ctx, search)
-        if ctx.voice_client.is_playing():
-            pass
-            await ctx.send("Added `" + title + "` to queue.")
-        else:
-            self.start_playing(ctx)
-            voice_state[guild_id]['now_playing'] = title
-            voice_state[guild_id]['channel'] = ctx.channel
-
-    @commands.command(aliases=['q'])
+    @commands.hybrid_command(name="queue", aliases=['q'])
     async def queue(self, ctx):
+        """
+        Displays song queue and loop state if there is one.
+        :param ctx: context
+        :return: None
+        """
         id = ctx.message.guild.id
-        if id in queue and queue[id]:
+        if id in voice_state and voice_state[id]:
+            queue = voice_state[id].songs
             embed = discord.Embed(title="Queue")
-            embed.add_field(name="Now Playing", value=voice_state[id]['now_playing'])
+            embed.add_field(name="Now Playing", value=voice_state[id].now_playing.title)
             queue_str = ""
-            if len(title_queue[id]) > 1:
-                for i in range(len(title_queue[id])-1):
-                    queue_str += f"{i+1}. {title_queue[id][i+1]}\n"
-                print(queue_str)
+            if len(queue) > 0:
+                for i in range(len(queue)):
+                    queue_str += f"{i + 1}. {queue[i].title}\n"
                 embed.add_field(name="Upcoming Songs", value=queue_str, inline=False)
-            if voice_state[id]['loop']:
+            if voice_state[id].loop:
                 embed.set_footer(text="Looping song.", icon_url=disc_gif)
-            elif voice_state[id]['loop_playlist']:
+            elif voice_state[id].loop_all:
                 embed.set_footer(text="Looping queue.", icon_url=disc_gif)
             else:
                 embed.set_footer(text="Playing queue.", icon_url=disc_gif)
@@ -223,133 +238,165 @@ class Music(commands.Cog):
         else:
             await ctx.send("Queue is empty.")
 
-    @commands.command(alises=['qc'])
+    @commands.hybrid_command(name="clear", aliases=['qc'])
     async def clear(self, ctx):
-        queue.clear()
-        title_queue.clear()
+        """
+        Clears the song queue.
+        :param ctx: context
+        :return: None
+        """
+        id = ctx.message.guild.id
+        if id in voice_state and voice_state[id] and check_same_voice_channel(ctx):
+            voice_state[id].clear_queue()
         await ctx.send("Queue cleared.")
 
-    @commands.command()
+    @commands.hybrid_command(name="skip")
     async def skip(self, ctx):
+        """
+        Skips the song currently playing
+        :param ctx: context
+        :return: None
+        """
         id = ctx.message.guild.id
-        voice_state[id]['voice'].pause()
-        await ctx.send("Skipping to next song.")
-        self.check_queue(ctx, ctx.message.guild.id)
-
-    @commands.command()
-    async def pause(self, ctx):
-        id = ctx.message.guild.id
-        voice_state[id]['voice'].pause()
-        await ctx.send("Paused.")
-
-    @commands.command()
-    async def resume(self, ctx):
-        id = ctx.message.guild.id
-        voice_state[id]['voice'].resume()
-        await ctx.send("Resuming...")
-
-    @commands.command(aliases=['lp'])
-    async def loop(self, ctx, arg=None):
-        id = ctx.message.guild.id
-
-        if arg == "all":
-            if voice_state[id]['loop_playlist']:
-                voice_state[id]['loop_playlist'] = False
-                await ctx.send("Ending playlist loop.")
-            else:
-                voice_state[id]['loop_playlist'] = True
-                voice_state[id]['loop'] = False
-                await ctx.send("Looping all songs in queue.")
-        elif voice_state[id]['loop'] is True:
-            voice_state[id]['loop'] = False
-            await ctx.send("Stopping loop.")
+        if check_same_voice_channel(ctx):
+            voice_state[id].voice.pause()
+            await ctx.send("Skipping to next song.")
+            await self.check_queue(ctx, ctx.message.guild.id)
         else:
-            voice_state[id]['loop'] = True
-            voice_state[id]['loop_playlist'] = False
-            await ctx.send(f"Now looping `{voice_state[id]['now_playing']}`.")
+            await ctx.send("You have to be connected to a voice channel to use this command.")
 
-    @commands.command(aliases=['qr', 'qremove'])
-    async def remove(self, ctx, arg):
+    @commands.hybrid_command(name="pause")
+    async def pause(self, ctx):
+        """
+        Pauses the song currently playing
+        :param ctx: context
+        :return: None
+        """
+        id = ctx.message.guild.id
+        if check_same_voice_channel(ctx):
+            voice_state[id].voice.pause()
+            await ctx.send("Paused.")
+        else:
+            await ctx.send("You have to be connected to a voice channel to use this command.")
+
+    @commands.hybrid_command(name="resume")
+    async def resume(self, ctx):
+        """
+        Resumes current song
+        :param ctx:
+        :return:
+        """
+        id = ctx.message.guild.id
+        if check_same_voice_channel(ctx):
+            voice_state[id].voice.resume()
+            await ctx.send("Resuming...")
+        else:
+            await ctx.send("You have to be connected to a voice channel to use this command.")
+
+    @commands.hybrid_command(name="loop", aliases=['lp'])
+    async def loop(self, ctx, type=None):
+        """
+        Disables/Enables queue looping
+        :param ctx:
+        :param type: all to loop every song in queue
+        :return:
+        """
+        id = ctx.message.guild.id
+        bot_handler = voice_state[id]
+        if check_same_voice_channel(ctx):
+            if type == "all":
+                bot_handler.set_loop_all()
+                if not bot_handler.loop_all:
+                    await ctx.send("Ending playlist loop.")
+                else:
+                    await ctx.send("Looping all songs in queue.")
+            else:
+                bot_handler.set_loop()
+                if not bot_handler.loop:
+                    await ctx.send("Stopping loop.")
+                    return
+                await ctx.send(f"Now looping `{bot_handler.now_playing.title}`.")
+        else:
+            await ctx.send("You have to be connected to a voice channel to use this command.")
+
+    @commands.hybrid_command(name="qr", aliases=['qremove'])
+    async def remove(self, ctx, num):
+        """
+        Removes a song given the number in queue
+        :param ctx:
+        :param num: Number of song in queue to remove
+        :return: None
+        """
         guild_id = ctx.message.guild.id
+        bot_handler = voice_state[guild_id]
         try:
-            index = int(arg)
+            index = int(num)
         except ValueError:
             await ctx.send("Please input a number.")
             return
-        if 1 <= index <= len(title_queue[guild_id]) - 1:
-            queue[guild_id].pop(index)
-            title = title_queue[guild_id].pop(index)
-            await ctx.send(f"`{title}` has been removed from queue.")
+        if 1 <= index <= len(bot_handler.songs):
+            song = bot_handler.remove_song(index)
+            await ctx.send(f"`{song.title}` has been removed from queue.")
         else:
             await ctx.send("Please input a valid number.")
 
-    @commands.command()
+    @commands.hybrid_command(name="shuffle")
     async def shuffle(self, ctx):
+        """
+        Shuffles queue
+        :param ctx: context
+        :return: None
+        """
         id = ctx.message.guild.id
-
-        if len(queue[id]) > 2:
-            temp_queue = queue[id][1:]
-            temp_title = title_queue[id][1:]
-            temp_list = list(zip(temp_queue, temp_title))
-            random.shuffle(temp_list)
-            shuffled_queue, shuffled_title = zip(*temp_list)
-            queue[id] = [queue[id][0]] + list(shuffled_queue)
-            title_queue[id] = [title_queue[id][0]] + list(shuffled_title)
+        bot_handler = voice_state[id]
+        if len(bot_handler.songs) > 1:
+            bot_handler.shuffle_queue()
             await ctx.send("Queue has been shuffled.")
         else:
             await ctx.send("Not enough songs to shuffle.")
 
-    def start_playing(self, ctx):
+    async def start_playing(self, ctx):
         id = ctx.message.guild.id
-        source = make_audio_source(queue[id][0])
-        voice_state[id]['voice'].play(source, after=lambda e=None: self.after_playing(ctx, e))
-        asyncio.run_coroutine_threadsafe(ctx.send(f'Now playing `{title_queue[id][0]}`'), self.bot.loop)
+        song = voice_state[id].now_playing
+        source = song.make_audio_source()
+        await ctx.send(f'Now playing `{song.title}`')
+        voice_state[id].voice.play(source,
+                                   after=lambda e=None: asyncio.run_coroutine_threadsafe(self.after_playing(ctx, e),
+                                                                                         self.bot.loop))
 
-    def after_playing(self, ctx, error):
+    async def after_playing(self, ctx, error):
         id = ctx.message.guild.id
         if error:
-            voice_state[id]['channel'].send("Sorry, something happened. Try again later.")
+            voice_state[id].channel.send("Sorry, something happened. Try again later.")
             raise error
         else:
             id = ctx.message.guild.id
-            if id in queue and queue[id]:
-                self.check_queue(ctx, ctx.message.guild.id)
+            if id in voice_state and voice_state[id]:
+                await self.check_queue(ctx, ctx.message.guild.id)
 
-    def q(self, ctx, search):
-        url, title = search_youtube(search)
-
+    async def queue_song(self, ctx, search_type, search):
+        url, title = await search_type(search)
         guild_id = ctx.message.guild.id
-        if guild_id in queue:
-            queue[guild_id].append(url)
-            title_queue[guild_id].append(title)
-        else:
-            queue[guild_id] = [url]
-            title_queue[guild_id] = [title]
-        return title
+        song = MusicObj(url, title)
+        voice_state[guild_id].queue(song)
+        return song
 
-    def noqueue(self, ctx, search):
-        url, title = no_search_youtube(search)
-        guild_id = ctx.message.guild.id
-        if guild_id in queue:
-            queue[guild_id].append(url)
-            title_queue[guild_id].append(title)
+    async def check_queue(self, ctx, id):
+        bot_handler = voice_state[id]
+        if bot_handler.loop:
+            song = bot_handler.now_playing
         else:
-            queue[guild_id] = [url]
-            title_queue[guild_id] = [title]
-        return title
+            if bot_handler.loop_all:
+                bot_handler.queue(bot_handler.now_playing)
+            song = bot_handler.dequeue()
 
-    def check_queue(self, ctx, id):
-        if not voice_state[id]['loop'] and not voice_state[id]['loop_playlist']:
-            queue[id].pop(0)
-            title_queue[id].pop(0)
-        elif voice_state[id]['loop_playlist']:
-            queue[id].append(queue[id].pop(0))
-            title_queue[id].append(title_queue[id].pop(0))
-        if queue[id]:
-            source = make_audio_source(queue[id][0])
-            voice_state[id]['voice'].play(source, after=lambda e=None: self.after_playing(ctx, e))
-            asyncio.run_coroutine_threadsafe(voice_state[id]['channel'].send(f'Now playing `{title_queue[id][0]}`'), self.bot.loop)
-            voice_state[id]['now_playing'] = title_queue[id][0]
+        if song is not None:
+            source = song.make_audio_source()
+            bot_handler.voice.play(source,
+                                   after=lambda e=None: asyncio.run_coroutine_threadsafe(self.after_playing(ctx, e),
+                                                                                         self.bot.loop))
+            await bot_handler.channel.send(f'Now playing `{song.title}`')
+            bot_handler.now_playing = song
 
 
 async def setup(bot):
