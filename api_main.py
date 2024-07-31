@@ -1,10 +1,28 @@
+import datetime
+import os
+
+import uvicorn
+from dotenv import load_dotenv
+
 from fastapi import FastAPI
 import yt_dlp
 import urllib.request
 from urllib.parse import quote
 import re
+from pydantic import BaseModel
+
+from pymongo.mongo_client import MongoClient
+from pymongo.server_api import ServerApi
+
+load_dotenv()
+uri = os.getenv("MONGO_URI")
+
 
 app = FastAPI()
+db_client = MongoClient(uri, server_api=ServerApi('1'))
+db = db_client['KeriaBot']
+user_db = db['UserDB']
+
 
 ydl_opts = {
     'format': 'bestaudio/best',
@@ -16,6 +34,13 @@ ydl_opts = {
         'preferredquality': '192',
     }],
 }
+
+
+class Item(BaseModel):
+    guild_id: int
+    user_id: int
+    cookies: int
+    daily: bool | None = False
 
 
 def extract_data(url):
@@ -54,3 +79,37 @@ async def search_youtube(search: str):
     search = search.replace(" ", "+")
     search_url = "https://www.youtube.com/results?search_query=" + quote(search)
     return extract_data(search_url)
+
+
+@app.get("/user/{guild_id}/{user_id}")
+async def user_info(guild_id: int, user_id: int):
+    result = user_db.find_one({"guild_id": guild_id, "user_id": user_id})
+    if result is not None:
+        return {"cookies": result['cookies'], "datetime": result['datetime']}
+    user_db.insert_one({"guild_id": guild_id, "user_id": user_id, "cookies": 0, "datetime": None})
+    return {"cookies": 0, "datetime": None}
+
+
+@app.post("/user/update", status_code=202)
+async def update_user(data: Item):
+    guild_id, user_id, cookies, daily = data.guild_id, data.user_id, data.cookies, data.daily
+    if daily:
+        user_db.find_one_and_update({"guild_id": guild_id, "user_id": user_id},
+                                    {"$set": {"datetime": str(datetime.datetime.now()), "cookies": cookies}},
+                                    upsert=True)
+    else:
+        user_db.find_one_and_update({"guild_id": guild_id, "user_id": user_id}, {"$set": {"cookies": cookies}},
+                                    upsert=True)
+
+
+@app.get("/guild/allusers/{guild_id}")
+async def get_users(guild_id: int):
+    result = user_db.find({"guild_id": guild_id, "cookies": {"$gt": 0}})
+    data = {'users': [], 'cookies': []}
+    for document in result:
+        data['users'].append(document['user_id'])
+        data['cookies'].append(document['cookies'])
+    return data
+
+if __name__ == '__main__':
+    uvicorn.run(app, port=8080, host='0.0.0.0')
