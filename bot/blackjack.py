@@ -161,19 +161,20 @@ class Blackjack(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.command(aliases=['blackjack'])
-    async def bjack(self, ctx, *, bet):
-        try:
-            bet = int(bet)
-        except ValueError:
-            return await ctx.send("Please enter a number as bet.")
-
+    @commands.hybrid_command(name="bjack")
+    async def bjack(self, ctx, *, bet: int):
+        """
+        Classic Blackjack game with one player.
+        :param ctx:
+        :param bet: Amount of cookies to bet
+        :return:
+        """
         cards = []
         cards = make_cards(cards)
         player_hand = deal_cards(cards, 2)
         dealer_hand = deal_cards(cards, 2)
         if bet == 0:
-            return await ctx.send("You need to bet more than 0 cookies.")
+            return await ctx.send("You need to bet more than 0 cookies.", ephemeral=True)
         else:
             info = await get_info(ctx.guild.id, ctx.author.id)
             if info['cookies'] < bet:
@@ -184,9 +185,18 @@ class Blackjack(commands.Cog):
     async def bjack_error(self, ctx, error):
         if isinstance(error, commands.MissingRequiredArgument):
             await ctx.send('Incorrect arguments entered. Please enter a bet number.')
+        elif isinstance(error, commands.BadArgument):
+            await ctx.send("Please enter a number as bet.")
+        else:
+            await ctx.send("Oops. Something went wrong. Try again later.")
 
-    @commands.command(aliases=['mbjack'])
+    @commands.hybrid_command(name="multibjack", aliases=['mbjack'])
     async def multi_bjack(self, ctx):
+        """
+        Classic Blackjack game with max. 5 players
+        :param ctx:
+        :return: None
+        """
         embed = discord.Embed(title="Blackjack (Max. 5 players)", description="React to the message if you want to "
                                                                               "join the game. No bets will be taken "
                                                                               "for the multiplayer version.")
@@ -199,7 +209,7 @@ class Blackjack(commands.Cog):
         def check(reaction, user):
             return str(reaction) == "✅"
 
-        async def coro():
+        async def add_user():
             start = False
             while not start:
                 try:
@@ -217,7 +227,8 @@ class Blackjack(commands.Cog):
                     if len(players) == 5:
                         await ctx.send("Maximum players reached.")
                         return True
-        async def coro2(value):
+
+        async def timer(value):
             while value != 0:
                 await asyncio.sleep(1)
                 value -= 1
@@ -228,7 +239,7 @@ class Blackjack(commands.Cog):
                     embed.add_field(name="Timer", value=f"{value} seconds left")
                 await message.edit(embed=embed)
 
-        ret1, ret2 = await asyncio.gather(coro(), coro2(value))
+        ret1, ret2 = await asyncio.gather(add_user(), timer(value))
         if ret1:
             await ctx.send("Starting game now...")
             cards = make_cards([])

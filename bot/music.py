@@ -193,7 +193,7 @@ class Music(commands.Cog):
         bot_handler = BotVoiceHandler(ctx.channel)
 
         if not ctx.author.voice:
-            await ctx.send("You must be connected to a voice channel.")
+            await ctx.send("You must be connected to a voice channel.", ephemeral=True)
             return
 
         if not ctx.voice_client:
@@ -263,7 +263,7 @@ class Music(commands.Cog):
             await ctx.send("Skipping to next song.")
             await self.check_queue(ctx, ctx.message.guild.id)
         else:
-            await ctx.send("You have to be connected to a voice channel to use this command.")
+            await ctx.send("You have to be connected to a voice channel to use this command.", ephemeral=True)
 
     @commands.hybrid_command(name="pause")
     async def pause(self, ctx):
@@ -277,7 +277,7 @@ class Music(commands.Cog):
             voice_state[id].voice.pause()
             await ctx.send("Paused.")
         else:
-            await ctx.send("You have to be connected to a voice channel to use this command.")
+            await ctx.send("You have to be connected to a voice channel to use this command.", ephemeral=True)
 
     @commands.hybrid_command(name="resume")
     async def resume(self, ctx):
@@ -291,14 +291,15 @@ class Music(commands.Cog):
             voice_state[id].voice.resume()
             await ctx.send("Resuming...")
         else:
-            await ctx.send("You have to be connected to a voice channel to use this command.")
+            await ctx.send("You have to be connected to a voice channel to use this command.", ephemeral=True)
 
     @commands.hybrid_command(name="loop", aliases=['lp'])
-    async def loop(self, ctx, type=None):
+    @discord.app_commands.choices(type=[discord.app_commands.Choice(name="queue", value="all")])
+    async def loop(self, ctx, type: str = None):
         """
         Disables/Enables queue looping
         :param ctx:
-        :param type: all to loop every song in queue
+        :param type: No input to loop track or 'all' to loop queue
         :return:
         """
         id = ctx.message.guild.id
@@ -317,10 +318,10 @@ class Music(commands.Cog):
                     return
                 await ctx.send(f"Now looping `{bot_handler.now_playing.title}`.")
         else:
-            await ctx.send("You have to be connected to a voice channel to use this command.")
+            await ctx.send("You have to be connected to a voice channel to use this command.", ephemeral=True)
 
-    @commands.hybrid_command(name="qr", aliases=['qremove'])
-    async def remove(self, ctx, num):
+    @commands.hybrid_command(name="remove", aliases=['qremove', 'qr'])
+    async def remove(self, ctx, num: int):
         """
         Removes a song given the number in queue
         :param ctx:
@@ -329,16 +330,16 @@ class Music(commands.Cog):
         """
         guild_id = ctx.message.guild.id
         bot_handler = voice_state[guild_id]
-        try:
-            index = int(num)
-        except ValueError:
-            await ctx.send("Please input a number.")
-            return
-        if 1 <= index <= len(bot_handler.songs):
-            song = bot_handler.remove_song(index)
+        if 1 <= num <= len(bot_handler.songs):
+            song = bot_handler.remove_song(num)
             await ctx.send(f"`{song.title}` has been removed from queue.")
         else:
-            await ctx.send("Please input a valid number.")
+            await ctx.send("Please input a valid number from queue.", ephemeral=True)
+
+    @remove.error
+    async def remove_error(self, ctx, error):
+        if isinstance(error, commands.BadArgument):
+            await ctx.send("Please input a number.")
 
     @commands.hybrid_command(name="shuffle")
     async def shuffle(self, ctx):
@@ -352,8 +353,9 @@ class Music(commands.Cog):
         if len(bot_handler.songs) > 1:
             bot_handler.shuffle_queue()
             await ctx.send("Queue has been shuffled.")
+            await self.bot.invoke("queue")
         else:
-            await ctx.send("Not enough songs to shuffle.")
+            await ctx.send("Not enough songs for me to shuffle.")
 
     async def start_playing(self, ctx):
         id = ctx.message.guild.id
@@ -367,7 +369,7 @@ class Music(commands.Cog):
     async def after_playing(self, ctx, error):
         id = ctx.message.guild.id
         if error:
-            voice_state[id].channel.send("Sorry, something happened. Try again later.")
+            voice_state[id].channel.send("Sorry, something happened. Try again later.", ephemeral=True)
             raise error
         else:
             id = ctx.message.guild.id
