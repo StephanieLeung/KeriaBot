@@ -113,8 +113,14 @@ class Cookie(commands.Cog):
 
     @commands.hybrid_command(name="daily", with_app_command=True, description="Daily claim for cookies.")
     async def daily_command(self, ctx):
+        """
+        Daily claim for cookies
+        :param ctx:
+        :return: None
+        """
+        message = await ctx.send("Getting your cookies...")
         await self.daily(ctx)
-
+        
     async def daily(self, ctx):
         now = datetime.datetime.now()
         info = local_get_info(ctx.guild.id, ctx.author.id)
@@ -135,6 +141,11 @@ class Cookie(commands.Cog):
 
     @commands.hybrid_command(name="top", with_app_command=True)
     async def top_command(self, ctx):
+        """
+        Shows the top 10 players with the most cookies
+        :param ctx:
+        :return: None
+        """
         message = await ctx.send("Calculating...")
         await self.top(ctx, message)
 
