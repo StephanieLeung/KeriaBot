@@ -1,6 +1,7 @@
 import datetime
 import os
 
+import pymongo
 import uvicorn
 from dotenv import load_dotenv
 
@@ -41,6 +42,7 @@ class Item(BaseModel):
     user_id: int
     cookies: int
     daily: bool | None = False
+    datetime: str | None = None
 
 
 def extract_data(url):
@@ -110,6 +112,31 @@ async def get_users(guild_id: int):
         data['users'].append(document['user_id'])
         data['cookies'].append(document['cookies'])
     return data
+
+
+@app.get("/allusers")
+async def get_all_data():
+    result = user_db.find()
+    data = []
+    for document in result:
+        data.append({"guild_id": document['guild_id'],
+                     "user_id": document['user_id'],
+                     "cookies": document['cookies'],
+                     "datetime": document['datetime']})
+    return {"all data": data}
+
+
+@app.post("/allusers/update", status_code=202)
+async def update_db(data: list[Item]):
+    operations = []
+    for item in data:
+        operations.append(pymongo.UpdateOne(
+            {"guild_id": item.guild_id, "user_id": item.user_id},
+            {"$set": {"cookies": item.cookies, "datetime": item.datetime}},
+            upsert=True))
+    user_db.bulk_write(operations)
+
+
 
 if __name__ == '__main__':
     uvicorn.run(app, port=8080, host='0.0.0.0')
