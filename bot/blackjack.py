@@ -4,7 +4,7 @@ import discord
 from discord.ext import commands
 from discord.ui import Button, View
 import random
-from cookie import get_info, update_cookie
+from cookie import local_get_info, local_update_cookie
 
 suits = ["spades", "hearts", "diamonds", "clubs"]
 
@@ -111,7 +111,7 @@ async def handle_bjack_scores(ctx, bet, pscore, dscore, cookies):
         await ctx.send(d_win)
     if cookies < 0:
         cookies = 0
-    await update_cookie(ctx.guild.id, ctx.author.id, cookies)
+    local_update_cookie(ctx.guild.id, ctx.author.id, cookies)
     await ctx.send(f"You now have **{cookies}** cookies in your bank.")
     return
 
@@ -175,7 +175,7 @@ class Blackjack(commands.Cog):
         if bet == 0:
             return await ctx.send("You need to bet more than 0 cookies.")
         else:
-            info = await get_info(ctx.guild.id, ctx.author.id)
+            info = local_get_info(ctx.guild.id, ctx.author.id)
             if info['cookies'] < bet:
                 return await ctx.send(f"You don't have enough cookies. (**{info['cookies']}**)")
         await self.handle_ongoing_bjack(ctx, bet, cards, player_hand, dealer_hand, info['cookies'])

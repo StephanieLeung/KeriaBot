@@ -2,7 +2,7 @@ import asyncio
 import discord
 import random
 from discord.ext import commands
-from cookie import update_cookie, get_info
+from cookie import local_get_info, local_update_cookie
 
 
 def get_word(words):
@@ -95,11 +95,11 @@ class Wordle(commands.Cog):
             cookie += 70 - (guess * 10)
 
         if cookie != 0:
-            info = await get_info(ctx.guild.id, ctx.author.id)
+            info = local_get_info(ctx.guild.id, ctx.author.id)
             cookies = info["cookies"]
             cookies += cookie
             await ctx.send(f"Congrats! You earned **{cookie}** cookies. You now have **{cookies}** cookies in your bank.")
-            await update_cookie(ctx.guild.id, ctx.author.id, cookies + cookie)
+            local_update_cookie(ctx.guild.id, ctx.author.id, cookies + cookie)
 
 
 async def setup(bot):
