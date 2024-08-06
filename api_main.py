@@ -1,7 +1,6 @@
 import datetime
 import os
 
-import aiohttp
 import pymongo
 import requests
 import uvicorn
