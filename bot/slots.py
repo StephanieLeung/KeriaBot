@@ -3,7 +3,7 @@ import asyncio
 import discord
 import random
 from discord.ext import commands
-from cookie import local_get_info, local_update_cookie
+from cookie import local_get_info, update_cookies, get_cookies
 
 symbols = [":seven:", ":cherries:", ":hearts:", ":diamonds:", ":pudding:", ":kiwi:", ":tangerine:",
            ":watermelon:", ":rice_ball:", ":apple:", ":banana:", ":coin:", ":skull:", ":bubble_tea:", ":fire:",
@@ -11,6 +11,7 @@ symbols = [":seven:", ":cherries:", ":hearts:", ":diamonds:", ":pudding:", ":kiw
 
 
 def get_random_symbol():
+    random.shuffle(symbols)
     return random.choice(symbols)
 
 
@@ -31,6 +32,7 @@ class Slots(commands.Cog):
         random.seed()
 
     @commands.hybrid_command(name="slots")
+    @commands.cooldown(1, 7, commands.BucketType.user)
     async def slots(self, ctx, bet: int):
         """
         Simple slots machine.
@@ -41,16 +43,17 @@ class Slots(commands.Cog):
         first_symbol = get_random_symbol()
         second_symbol = get_random_symbol()
         third_symbol = get_random_symbol()
-        print(first_symbol, second_symbol, third_symbol)
-        title = await ctx.send("Setting up the slots...")
+        # print(first_symbol, second_symbol, third_symbol)
         info = local_get_info(ctx.guild.id, ctx.author.id)
         cookies = info['cookies']
+        if bet > cookies:
+            await ctx.send(f"You don't have enough cookies to make this bet. ({cookies})", ephemeral=True)
+            return
 
         first = random.randint(0, 19)
         second = random.randint(0, 19)
         third = random.randint(0, 19)
-        await title.edit(content="**Slots start!**")
-        message = await ctx.send("****")
+        message = await ctx.send("** **")
         while symbols[first] != first_symbol or symbols[second] != second_symbol or symbols[third] != third_symbol:
             first = check_equal(first, first_symbol)
             second = check_equal(second, second_symbol)
@@ -62,19 +65,34 @@ class Slots(commands.Cog):
 
         if first_symbol == second_symbol == third_symbol:
             if first_symbol == ":seven:":
-                cookies += bet * 1000
-                await ctx.send("Jackpot!")
+                add = bet * 5000
+                update_cookies(ctx.guild.id, ctx.author.id, add)
+                update_msg = f"Jackpot! You earned **{bet * 5000}** cookies."
             else:
-                await ctx.send("Congratulations!")
-                cookies += bet * 500
+                add = bet * 1000
+                update_cookies(ctx.guild.id, ctx.author.id, add)
+                update_msg = f"Congratulations! You earned **{bet * 1000}** cookies."
         elif first_symbol == second_symbol or second_symbol == third_symbol or first_symbol == third_symbol:
-            await ctx.send("Two out of three!")
-            cookies += bet * 100
+            add = bet * 20
+            update_cookies(ctx.guild.id, ctx.author.id, add)
+            update_msg = f"Two out of three! You earned **{bet * 20}** cookies."
         else:
-            await ctx.send("No winnings...")
-            cookies -= bet
-        await ctx.send(f"{ctx.author.mention}. You now have **{cookies}** cookies in your bank.")
-        local_update_cookie(ctx.guild.id, ctx.author.id, cookies)
+            add = -bet
+            update_cookies(ctx.guild.id, ctx.author.id, add)
+            update_msg = "No winnings..."
+        await ctx.send(f"{ctx.author.mention}. " + update_msg + f" You now have **{get_cookies(ctx.guild.id, ctx.author.id)}** cookies in "
+                       f"your bank.")
+
+    @slots.error
+    async def slots_error(self, ctx, error):
+        if isinstance(error, commands.MissingRequiredArgument):
+            await ctx.send("Please enter a bet number.")
+        elif isinstance(error, commands.BadArgument):
+            await ctx.send("Please enter a valid number.")
+        elif isinstance(error, commands.CommandOnCooldown):
+            await ctx.send("This command is on cooldown. Please wait **%.2f** seconds before retrying."
+                           % error.retry_after, ephemeral=True)
+        raise error
 
 
 async def setup(bot):

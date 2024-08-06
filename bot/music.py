@@ -56,8 +56,11 @@ class BotVoiceHandler:
 
     def dequeue(self):
         if self.songs:
-            return self.songs.pop(0)
+            song = self.songs.pop(0)
+            self.now_playing = song
+            return song
         else:
+            self.now_playing = None
             return None
 
     def clear_queue(self):
@@ -143,7 +146,7 @@ class Music(commands.Cog):
                 pass
                 await ctx.send("Added `" + title + "` to queue.")
             else:
-                bot_handler.now_playing = bot_handler.dequeue()
+                bot_handler.dequeue()
                 await self.start_playing(ctx)
         else:
             await ctx.send("You must be connected a voice channel for me to join")
@@ -190,15 +193,18 @@ class Music(commands.Cog):
 
     async def play_search(self, ctx, search_type, search):
         guild_id = ctx.message.guild.id
-        bot_handler = BotVoiceHandler(ctx.channel)
 
         if not ctx.author.voice:
             await ctx.send("You must be connected to a voice channel.", ephemeral=True)
             return
 
+        if guild_id in voice_state:
+            bot_handler = voice_state[guild_id]
+        else:
+            bot_handler = BotVoiceHandler(ctx.channel)
+            voice_state[guild_id] = bot_handler
+
         if not ctx.voice_client:
-            if guild_id not in voice_state:
-                voice_state[guild_id] = bot_handler
             voice = await ctx.message.author.voice.channel.connect()
             bot_handler.voice = voice
 
@@ -208,7 +214,7 @@ class Music(commands.Cog):
             pass
             await ctx.send("Added `" + song.title + "` to queue.")
         else:
-            bot_handler.now_playing = bot_handler.dequeue()
+            bot_handler.dequeue()
             await self.start_playing(ctx)
 
     @commands.hybrid_command(name="queue", aliases=['q'])
@@ -398,7 +404,6 @@ class Music(commands.Cog):
                                    after=lambda e=None: asyncio.run_coroutine_threadsafe(self.after_playing(ctx, e),
                                                                                          self.bot.loop))
             await bot_handler.channel.send(f'Now playing `{song.title}`')
-            bot_handler.now_playing = song
 
 
 async def setup(bot):

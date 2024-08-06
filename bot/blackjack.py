@@ -90,17 +90,17 @@ async def handle_bjack_scores(ctx, bet, pscore, dscore, cookies):
     if pscore > 21:
         cookies -= bet
         await ctx.send("Bust! Player loses.")
+    elif pscore == 21 or pscore > dscore:
+        if pscore == 21:
+            p_win = "Blackjack. " + p_win
+            cookies += bet
+        cookies += bet
+        await ctx.send(p_win)
     elif dscore > 21:
         cookies += bet
         await ctx.send("Bust! Dealer loses.")
     elif dscore == pscore:
         await ctx.send("Tie.")
-    elif pscore == 21 or pscore > dscore:
-        if pscore == 21:
-            p_win = "Blackjack. " + p_win
-            cookies += bet * 2
-        cookies += bet
-        await ctx.send(p_win)
     elif dscore == 21 or dscore > pscore:
         if dscore == 21:
             d_win = "Blackjack. " + d_win
@@ -199,7 +199,9 @@ class Blackjack(commands.Cog):
         """
         embed = discord.Embed(title="Blackjack (Max. 5 players)", description="React to the message if you want to "
                                                                               "join the game. No bets will be taken "
-                                                                              "for the multiplayer version.")
+                                                                              "for the multiplayer version. The goal "
+                                                                              "is to get as close to 21 as possible "
+                                                                              "without going over.")
         value = 10
         embed.add_field(name="Timer", value=f"{value} seconds left")
         message = await ctx.send(embed=embed)
@@ -217,6 +219,10 @@ class Blackjack(commands.Cog):
                     if user not in players:
                         players.append(user)
                         await ctx.send(f"{user.mention} has been added to game.")
+                    else:
+                        players.remove(user)
+                        await ctx.send(f"{user.mention} has been removed from the game.")
+
                 except asyncio.TimeoutError:
                     if len(players) >= 1:
                         return True
@@ -306,6 +312,9 @@ class Blackjack(commands.Cog):
         pass_button.callback = pass_button_callback
 
         async def start_button_callback(interaction: discord.Interaction):
+            if interaction.user not in players:
+                await interaction.response.send_message(content=f"You are not part of this game.", ephemeral=True)
+                return
             i = players.index(interaction.user)
             embed = display_bjack_hand(players[i].global_name, player_hands[i], dealer)
             if calc_score(player_hands[i]) == 21:
@@ -334,8 +343,7 @@ class Blackjack(commands.Cog):
     async def handle_ongoing_bjack(self, ctx, bet, cards, player, dealer, cookies, last=False):
         pscore = calc_score(player)
 
-        embed = discord.Embed(title="Blackjack", description="Type h/hit to get another card, p/pass if you don't "
-                                                             "want another one.")
+        embed = discord.Embed(title="Blackjack", description="Type h/hit to get another card, p/pass to end your turn.")
         embed.add_field(name=ctx.author.global_name, value=" ".join(str(x) for x in player) + f"\n**Score**: {pscore}")
         embed.add_field(name="Dealer", value=str(dealer[0]) + f"`   `\n**Score**: {calc_score([dealer[0]])}")
         message = await ctx.send(embed=embed)

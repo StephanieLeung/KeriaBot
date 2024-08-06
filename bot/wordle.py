@@ -60,7 +60,7 @@ class Wordle(commands.Cog):
                 await ctx.send("Please enter a 5-letter word.")
                 continue
             elif content not in self.valid_words:
-                await ctx.send(f"`{content.capitalize()}` is not a valid word. Try again.")
+                await ctx.send(f"`{content.capitalize()}` is not a valid word. Try again.", ephemeral=True)
                 continue
             else:
                 guesses[guess] = content

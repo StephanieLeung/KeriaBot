@@ -62,7 +62,7 @@ async def update_db():
     db.close()
 
 
-@tasks.loop(minutes=10)
+@tasks.loop(minutes=30)
 async def update_to_db_thread():
     await update_from_local()
     print("Updated MongoDB!")
@@ -78,7 +78,8 @@ async def setup_hook() -> None:
 async def on_ready():
     await update_db()
     await bot.change_presence(status=discord.Status.idle, activity=discord.CustomActivity(name='CHKCHKBOOM'))
-    update_to_db_thread.start()
+    if not update_to_db_thread.is_running():
+        update_to_db_thread.start()
     print(f'{bot.user.name} has connected to Discord!')
 
 

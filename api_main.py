@@ -1,13 +1,14 @@
 import datetime
 import os
 
+import aiohttp
 import pymongo
+import requests
 import uvicorn
 from dotenv import load_dotenv
 
 from fastapi import FastAPI
 import yt_dlp
-import urllib.request
 from urllib.parse import quote
 import re
 from pydantic import BaseModel
@@ -46,9 +47,9 @@ class Item(BaseModel):
 
 
 def extract_data(url):
-    html = urllib.request.urlopen(url)
-    vid_id = re.findall(r"watch\?v=(\S{11})", html.read().decode())
-    play_url = "https://www.youtube.com/watch?v=" + vid_id[0]
+    html = requests.get(url)
+    vid_id = re.search(r"watch\?v=(\S{11})", html.content.decode()).group(0)
+    play_url = "https://www.youtube.com/" + vid_id
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(play_url, download=False)

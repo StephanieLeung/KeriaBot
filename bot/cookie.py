@@ -43,7 +43,7 @@ def local_update_cookie(guild_id, user_id, cookie, daily=False):
         date = str(datetime.datetime.now())
         cursor.execute('''
             UPDATE users
-            SET cookies = ? AND datetime = ?
+            SET cookies = ?, datetime = ?
             WHERE guild_id = ? AND user_id = ?;
         ''', [cookie, date, guild_id, user_id])
     else:
@@ -57,6 +57,32 @@ def local_update_cookie(guild_id, user_id, cookie, daily=False):
     db.close()
 
 
+def local_get_all_info(guild_id):
+    db = sqlite3.connect("bot.db")
+    cursor = db.cursor()
+    result = cursor.execute('''
+        SELECT * FROM users
+        WHERE guild_id = ?;
+    ''', [guild_id]).fetchall()
+    cursor.close()
+    db.close()
+    data = {"users": [], "cookies": []}
+    for document in result:
+        data["users"].append(document[1])
+        data["cookies"].append(document[2])
+    return data
+
+
+def update_cookies(guild_id, author_id, add):
+    cookies = get_cookies(guild_id, author_id)
+    cookies += add
+    local_update_cookie(guild_id, author_id, cookies)
+
+
+def get_cookies(guild_id, author_id):
+    info = local_get_info(guild_id, author_id)
+    return info['cookies']
+
 
 async def __get_info(guild_id, user_id):
     url = test_url + f"user/{guild_id}/{user_id}"
@@ -67,6 +93,7 @@ async def __get_info(guild_id, user_id):
                 info = await r.json()
         await session.close()
     return info
+
 
 
 async def __update_cookie(guild_id, user_id, cookie, daily=False):
@@ -96,20 +123,25 @@ async def update_from_local():
 
 
 def daily_random():
-    normal = 0.60
     rare = 0.40
     large = 0.10
+    random.seed()
     if random.random() < large:
         return random.randint(500, 1000)
     elif random.random() < rare:
         return random.randint(200, 500)
-    elif random.random() < normal:
+    else:
         return random.randint(100, 200)
 
 
 class Cookie(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+
+    @commands.command(name="update", hidden=True)
+    async def update(self, ctx):
+        await update_from_local()
+        await ctx.send("Updated!")
 
     @commands.hybrid_command(name="daily", with_app_command=True, description="Daily claim for cookies.")
     async def daily_command(self, ctx):
@@ -118,7 +150,6 @@ class Cookie(commands.Cog):
         :param ctx:
         :return: None
         """
-        message = await ctx.send("Getting your cookies...")
         await self.daily(ctx)
         
     async def daily(self, ctx):
@@ -146,17 +177,10 @@ class Cookie(commands.Cog):
         :param ctx:
         :return: None
         """
-        message = await ctx.send("Calculating...")
-        await self.top(ctx, message)
+        await self.top(ctx)
 
-    async def top(self, ctx, message):
-        url = test_url + f"guild/allusers/{ctx.guild.id}"
-
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url) as r:
-                if r.status == 200:
-                    info = await r.json()
-            await session.close()
+    async def top(self, ctx):
+        info = local_get_all_info(ctx.guild.id)
 
         users = info['users']
         cookies = info['cookies']
@@ -169,7 +193,7 @@ class Cookie(commands.Cog):
             str += f"**{i+1}.** <@{users[i]}>  -  **{cookies[i]}** cookies\n"
 
         embed.add_field(name="Top 10", value=str, inline=False)
-        await message.edit(content="", embed=embed)
+        await ctx.send(embed=embed)
 
 
 async def setup(bot):
