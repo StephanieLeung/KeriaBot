@@ -6,24 +6,43 @@ import requests
 import uvicorn
 from dotenv import load_dotenv
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends, Security, HTTPException, status
 import yt_dlp
 from urllib.parse import quote
 import re
+
+from fastapi.security import OAuth2PasswordBearer, APIKeyHeader
 from pydantic import BaseModel
 
 from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
+from requests.auth import HTTPBasicAuth
 
 load_dotenv()
 uri = os.getenv("MONGO_URI")
+key = os.getenv("BOT_KEY")
+headers = {
+    "API-Key": f"{key}",
+    "Content-Type": "application/json"
+}
+
+api_key_header = APIKeyHeader(name="API-Key")
+
+
+def auth_user(api_key_header: str = Security(api_key_header)):
+    if key == api_key_header:
+        return {"message": "Authentication successful"}
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Missing or invalid API key"
+    )
 
 
 app = FastAPI()
 db_client = MongoClient(uri, server_api=ServerApi('1'))
 db = db_client['KeriaBot']
 user_db = db['UserDB']
-
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 ydl_opts = {
     'format': 'bestaudio/best',
@@ -84,7 +103,7 @@ async def search_youtube(search: str):
 
 
 @app.get("/user/{guild_id}/{user_id}")
-async def user_info(guild_id: int, user_id: int):
+async def user_info(guild_id: int, user_id: int, auth: HTTPBasicAuth = Depends(auth_user)):
     result = user_db.find_one({"guild_id": guild_id, "user_id": user_id})
     if result is not None:
         return {"cookies": result['cookies'], "datetime": result['datetime']}
@@ -93,7 +112,7 @@ async def user_info(guild_id: int, user_id: int):
 
 
 @app.post("/user/update", status_code=202)
-async def update_user(data: Item):
+async def update_user(data: Item, auth: HTTPBasicAuth = Depends(auth_user)):
     guild_id, user_id, cookies, daily = data.guild_id, data.user_id, data.cookies, data.daily
     if daily:
         user_db.find_one_and_update({"guild_id": guild_id, "user_id": user_id},
@@ -105,7 +124,7 @@ async def update_user(data: Item):
 
 
 @app.get("/guild/allusers/{guild_id}")
-async def get_users(guild_id: int):
+async def get_users(guild_id: int, auth: HTTPBasicAuth = Depends(auth_user)):
     result = user_db.find({"guild_id": guild_id, "cookies": {"$gt": 0}})
     data = {'users': [], 'cookies': []}
     for document in result:
@@ -115,7 +134,7 @@ async def get_users(guild_id: int):
 
 
 @app.get("/allusers")
-async def get_all_data():
+async def get_all_data(auth: HTTPBasicAuth = Depends(auth_user)):
     result = user_db.find()
     data = []
     for document in result:
@@ -127,7 +146,7 @@ async def get_all_data():
 
 
 @app.post("/allusers/update", status_code=202)
-async def update_db(data: list[Item]):
+async def update_db(data: list[Item], auth: HTTPBasicAuth = Depends(auth_user)):
     operations = []
     for item in data:
         operations.append(pymongo.UpdateOne(
@@ -135,7 +154,6 @@ async def update_db(data: list[Item]):
             {"$set": {"cookies": item.cookies, "datetime": item.datetime}},
             upsert=True))
     user_db.bulk_write(operations)
-
 
 
 if __name__ == '__main__':

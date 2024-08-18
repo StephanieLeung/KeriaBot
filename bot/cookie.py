@@ -1,10 +1,9 @@
-import json
-
 import aiohttp
 import discord
 from discord.ext import commands
 import datetime
 import random
+from api_main import headers
 
 import sqlite3
 
@@ -95,7 +94,6 @@ async def __get_info(guild_id, user_id):
     return info
 
 
-
 async def __update_cookie(guild_id, user_id, cookie, daily=False):
     url = test_url + f"user/update"
     data = {"guild_id": guild_id, "user_id": user_id, "cookies": cookie, "daily": daily}
@@ -107,7 +105,7 @@ async def __update_cookie(guild_id, user_id, cookie, daily=False):
 
 
 async def update_from_local():
-    url = test_url + f"allusers/update"
+    url = main_url + f"allusers/update"
 
     db = sqlite3.connect("bot.db")
     cursor = db.cursor()
@@ -116,7 +114,7 @@ async def update_from_local():
 
     column_names = [description[0] for description in cursor.description]
     data = [dict(zip(column_names, row)) for row in rows]
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(headers=headers) as session:
         async with session.post(url, json=data) as r:
             pass
         await session.close()

@@ -9,6 +9,7 @@ from pathlib import Path
 from simplecmd import *
 import discord
 from cookie import update_from_local
+from api_main import headers
 
 load_dotenv()
 TOKEN = os.getenv('BOT_TOKEN')
@@ -46,7 +47,7 @@ async def update_db():
         db.commit()
 
     url = "http://localhost:8000/allusers"
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(headers=headers) as session:
         async with session.get(url) as r:
             if r.status == 200:
                 info = await r.json()

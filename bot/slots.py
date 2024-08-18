@@ -5,7 +5,7 @@ import random
 from discord.ext import commands
 from cookie import local_get_info, update_cookies, get_cookies
 
-symbols = [":seven:", ":cherries:", ":hearts:", ":diamonds:", ":pudding:", ":kiwi:", ":tangerine:",
+symbols = [":gem:", ":cherries:", ":hearts:", ":diamonds:", ":pudding:", ":kiwi:", ":tangerine:",
            ":watermelon:", ":rice_ball:", ":apple:", ":banana:", ":coin:", ":skull:", ":bubble_tea:", ":fire:",
            ":hibiscus:", ":ramen:", ":dango:", ":ice_cream:", ":blossom:"]
 
@@ -32,7 +32,7 @@ class Slots(commands.Cog):
         random.seed()
 
     @commands.hybrid_command(name="slots")
-    @commands.cooldown(1, 7, commands.BucketType.user)
+    @commands.cooldown(1, 2, commands.BucketType.user)
     async def slots(self, ctx, bet: int):
         """
         Simple slots machine.
@@ -43,28 +43,24 @@ class Slots(commands.Cog):
         first_symbol = get_random_symbol()
         second_symbol = get_random_symbol()
         third_symbol = get_random_symbol()
-        # print(first_symbol, second_symbol, third_symbol)
+        print(first_symbol, second_symbol, third_symbol)
         info = local_get_info(ctx.guild.id, ctx.author.id)
         cookies = info['cookies']
         if bet > cookies:
             await ctx.send(f"You don't have enough cookies to make this bet. ({cookies})", ephemeral=True)
             return
 
-        first = random.randint(0, 19)
-        second = random.randint(0, 19)
-        third = random.randint(0, 19)
-        message = await ctx.send("** **")
-        while symbols[first] != first_symbol or symbols[second] != second_symbol or symbols[third] != third_symbol:
-            first = check_equal(first, first_symbol)
-            second = check_equal(second, second_symbol)
-            third = check_equal(third, third_symbol)
-            await message.edit(content=f"{symbols[first-1]} {symbols[second-1]} {symbols[third-1]}\n"
-                                       f"{symbols[first]} {symbols[second]} {symbols[third]} **<<**\n"
-                                       f"{symbols[next_symbol(first)]} {symbols[next_symbol(second)]} {symbols[next_symbol(third)]}")
-            await asyncio.sleep(1)
+        edit_list = ["<a:slots:1270506170070863914>", "<a:slots_1:1270508755397902456>", "<a:slots_2:1270508773861232763>"]
+        slot_result = [first_symbol, second_symbol, third_symbol]
+        message = await ctx.send("<a:slots:1270506170070863914> <a:slots_1:1270508755397902456> <a:slots_2:1270508773861232763>")
+
+        for i in range(3):
+            await asyncio.sleep(0.6)
+            edit_list[i] = slot_result[i]
+            await message.edit(content=f"{edit_list[0]} {edit_list[1]} {edit_list[2]}")
 
         if first_symbol == second_symbol == third_symbol:
-            if first_symbol == ":seven:":
+            if first_symbol == ":gem:":
                 add = bet * 5000
                 update_cookies(ctx.guild.id, ctx.author.id, add)
                 update_msg = f"Jackpot! You earned **{bet * 5000}** cookies."
