@@ -3,7 +3,9 @@ import asyncio
 import discord
 import random
 from discord.ext import commands
-from cookie import local_get_info, update_cookies, get_cookies
+
+from helpers.cookieFuncs import *
+
 
 symbols = [":gem:", ":cherries:", ":hearts:", ":diamonds:", ":pudding:", ":kiwi:", ":tangerine:",
            ":watermelon:", ":rice_ball:", ":apple:", ":banana:", ":coin:", ":skull:", ":bubble_tea:", ":fire:",
@@ -44,8 +46,7 @@ class Slots(commands.Cog):
         second_symbol = get_random_symbol()
         third_symbol = get_random_symbol()
         print(first_symbol, second_symbol, third_symbol)
-        info = local_get_info(ctx.guild.id, ctx.author.id)
-        cookies = info['cookies']
+        cookies = get_cookies(ctx.guild.id, ctx.author.id)
         if bet > cookies:
             await ctx.send(f"You don't have enough cookies to make this bet. ({cookies})", ephemeral=True)
             return

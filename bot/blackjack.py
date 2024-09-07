@@ -3,9 +3,9 @@ import asyncio
 import discord
 from discord.ext import commands
 from discord.ui import Button, View
-from cookie import local_get_info, local_update_cookie
 
-from cardgame import Deck, Player
+from helpers.cardgame import Deck, Player
+from helpers.cookieFuncs import *
 
 suits = ["spades", "hearts", "diamonds", "clubs"]
 
@@ -111,10 +111,10 @@ class Blackjack(commands.Cog):
         if bet == 0:
             return await ctx.send("You need to bet more than 0 cookies.", ephemeral=True)
         else:
-            info = local_get_info(ctx.guild.id, ctx.author.id)
-            if info['cookies'] < bet:
-                return await ctx.send(f"You don't have enough cookies. (**{info['cookies']}**)")
-        await self.handle_ongoing_bjack(ctx, bet, cards, player, dealer, info['cookies'])
+            cookies = get_cookies(ctx.guild.id, ctx.author.id)
+            if cookies < bet:
+                return await ctx.send(f"You don't have enough cookies. (**{cookies}**)")
+        await self.handle_ongoing_bjack(ctx, bet, cards, player, dealer, cookies)
 
     @bjack.error
     async def bjack_error(self, ctx, error):

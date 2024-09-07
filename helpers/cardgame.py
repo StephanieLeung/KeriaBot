@@ -83,9 +83,10 @@ class Player:
                     hand_values.pop(i)
                     hand_values.insert(i, 11)
         self.score = sum(hand_values)
+        return hand_values
 
     def first_score(self):
-        return self.__hand[0].get_value()
+        return self.calc_score()[0]
 
     def first_card(self):
         return self.__hand[0]

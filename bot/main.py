@@ -1,66 +1,20 @@
 import os
-import sqlite3
-
-import aiohttp
 from dotenv import load_dotenv
 from discord.ext import commands, tasks
-from pathlib import Path
 from simplecmd import *
 import discord
-from cookie import update_from_local
-from api_main import headers
+from helpers.dbFuncs import *
 
 load_dotenv()
 TOKEN = os.getenv('BOT_TOKEN')
 OWNER = os.getenv('OWNER')
 
-EXTENSIONS = ("simplecmd", "music", "blackjack", "cookie", "wordle", "slots")
+EXTENSIONS = ("simplecmd", "music", "blackjack", "cookie", "wordle", "slots", "bank")
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
 
 bot = commands.Bot(command_prefix='mew ', intents=intents)
-
-
-async def update_db():
-    # checks if database exists
-    if not (Path.cwd() / "bot.db").exists():
-        db = sqlite3.connect("bot.db")
-        cursor = db.cursor()
-        cursor.execute('''
-                CREATE TABLE users (
-                    guild_id INTEGER NOT NULL, 
-                    user_id INTEGER NOT NULL, 
-                    cookies INTEGER , 
-                    datetime TEXT, 
-                    PRIMARY KEY (guild_id, user_id)
-                );
-            ''')
-        db.commit()
-    else:
-        db = sqlite3.connect("bot.db")
-        cursor = db.cursor()
-        cursor.execute('''
-            DELETE FROM users;   
-        ''')
-        db.commit()
-
-    url = "https://keria-bot-api.vercel.app/allusers"
-    async with aiohttp.ClientSession(headers=headers) as session:
-        async with session.get(url) as r:
-            if r.status == 200:
-                info = await r.json()
-        await session.close()
-    info = info['all data']
-    for doc in info:
-        cursor.execute('''
-            INSERT INTO users (guild_id, user_id, cookies, datetime)
-            VALUES (:guild_id, :user_id, :cookies, :datetime);
-        ''', doc)
-    db.commit()
-    cursor.close()
-    db.close()
-
 
 @tasks.loop(minutes=30)
 async def update_to_db_thread():
