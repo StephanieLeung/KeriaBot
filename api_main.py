@@ -6,7 +6,7 @@ import requests
 import uvicorn
 from dotenv import load_dotenv
 
-from fastapi import FastAPI, Depends, Security, HTTPException, status
+from fastapi import FastAPI, Depends, Security, HTTPException, status, Response
 import yt_dlp
 from urllib.parse import quote
 import re
@@ -45,17 +45,37 @@ user_db = db['UserDB']
 bank_db = db['BankDB']
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
+# ydl_opts = {
+#     'format': 'bestaudio/best',
+#     'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
+#     'quiet': True,
+#     'postprocessors': [{
+#         'key': 'FFmpegExtractAudio',
+#         'preferredcodec': 'mp3',
+#         'preferredquality': '192',
+#     }],
+# }
+
 ydl_opts = {
     'format': 'bestaudio/best',
     'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
     'quiet': True,
+    'ignoreerrors': True,
+    'skip_download': True,
+    'extract_flat': True,
     'postprocessors': [{
         'key': 'FFmpegExtractAudio',
-        'preferredcodec': 'mp3',
+        'preferredcodec': 'm4a',
         'preferredquality': '192',
     }],
 }
 
+ydl_playlist_opts = {
+    'extract_flat': True,
+    'skip_download': True,
+    'ignoreerrors': True,
+    'quiet': True,
+}
 
 class User(BaseModel):
     guild_id: int
@@ -89,18 +109,33 @@ async def read_root():
 
 
 @app.get("/music/{search}")
-async def search_youtube(search: str):
+async def search_youtube(search: str, response: Response):
     search = search.replace(" ", "+")
     search_url = "https://www.youtube.com/results?search_query=music+" + quote(search)
+    info = extract_data(search_url)
+    if info is None:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     return extract_data(search_url)
 
 
 @app.get("/music-id/{search}")
-async def search_youtube(search: str):
+async def search_youtube_id(search: str, response: Response):
     play_url = "https://www.youtube.com/watch?v=" + search
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(play_url, download=False)
+    if info is None:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    return info
+
+@app.get("/music-playlist/{search}")
+async def search_youtube_playlist(search: str, response: Response):
+    play_url = "https://www.youtube.com/playlist?list=" + search
+    with yt_dlp.YoutubeDL(ydl_playlist_opts) as ydl:
+        info = ydl.extract_info(play_url, download=False)
+
+    if info is None:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     return info
 
 

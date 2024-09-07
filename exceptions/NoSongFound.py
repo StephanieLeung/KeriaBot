@@ -1,0 +1,2 @@
+class NoSongFoundError(Exception):
+    pass

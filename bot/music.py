@@ -1,20 +1,26 @@
 import asyncio
 import random
+from multiprocessing import Process
+from threading import Thread
 
 import aiohttp
 import discord
 from discord.ext import commands
-from discord import FFmpegPCMAudio
+from discord import FFmpegPCMAudio, FFmpegOpusAudio
 import spotipy
+from discord.ui import View, Button
 from spotipy.oauth2 import SpotifyClientCredentials
 import os
 from dotenv import load_dotenv
 
-voice_state = {}
+from exceptions.NoSongFound import NoSongFoundError
+
+bot_voice = {}
 main_url = "https://keriabot.onrender.com/"
 test_url = "http://localhost:8000/"
 disc_gif = ("https://media0.giphy.com/media/LwBTamVefKJxmYwDba/giphy.gif?cid"
             "=6c09b952g0ljvqtoads16f77bd3hpv1cwibrnm3b3pmzyifz&rid=giphy.gif&ct=s")
+stop_thread = {"done": False}
 
 load_dotenv()
 CLIENT_ID = os.getenv("SPOTIPY_CLIENT_ID")
@@ -32,10 +38,14 @@ class MusicObj:
         if self.url == "../KeriaBot/Animal Crossing  Nabi Bobet Tau.mp3":
             source = FFmpegPCMAudio(self.url)
         else:
-            source = FFmpegPCMAudio(self.url,
-                                    before_options="-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -ss "
-                                                   "00:00:00.00",
-                                    options="-vn")
+            # # source = FFmpegPCMAudio(self.url,
+            #                         before_options="-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -ss "
+            #                                        "00:00:00.00",
+            #                         options="-vn")
+            source = FFmpegOpusAudio(self.url,
+                                     before_options="-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -ss "
+                                                    "00:00:00.00",
+                                     options="-vn")
         return source
 
 
@@ -80,19 +90,28 @@ class BotVoiceHandler:
 
 async def search_youtube(search):
     search = parse_search(search)
-    if "http" in search and "youtube" in search:
+    if "http" in search and "youtube" in search and "playlist" in search:
+        search = search.partition("=")[2]
+        url = test_url + f"music-playlist/{search}"
+    elif "http" in search and "youtube" in search:
         search = search.partition("=")[2]
         url = test_url + f"music-id/{search}"
     else:
         url = test_url + f"music/{search}"
 
-    return await get_song_info(url)
+    try:
+        return await get_song_info(url)
+    except NoSongFoundError as e:
+        raise e
 
 
 async def no_search_youtube(search):
     search = parse_search(search)
     url = test_url + f"youtube/{search}"
-    return await get_song_info(url)
+    try:
+        return await get_song_info(url)
+    except NoSongFoundError as e:
+        raise e
 
 
 def parse_search(search):
@@ -108,9 +127,16 @@ async def get_song_info(url):
         async with session.get(url) as r:
             if r.status == 200:
                 info = await r.json()
+            else:
+                raise NoSongFoundError()
         await session.close()
-
-    return info['url'], info['title']
+    try:
+        videos = info['entries']
+        video = "https://www.youtube.com/watch?v=" + videos[0]['id']
+        info, placeholder = await search_youtube(video)
+        return [info[0], info[1]], videos[1:]
+    except KeyError:
+        return [info['url'], info['title']], []
 
 
 def check_same_voice_channel(ctx):
@@ -118,6 +144,33 @@ def check_same_voice_channel(ctx):
         return ctx.voice_client.channel.id == ctx.author.voice.channel.id
     else:
         return False
+
+
+async def handle_playlist_videos(videos, bot_queue_callback, ctx):
+    for video in videos:
+        if stop_thread['done']:
+            return
+        search = "https://www.youtube.com/watch?v=" + video['id']
+        await bot_queue_callback(ctx, search_youtube, search)
+
+
+def display_queue(bot_voice: BotVoiceHandler, page: int):
+    queue = bot_voice.songs
+    embed = discord.Embed(title="Queue")
+    embed.add_field(name="Now Playing", value=bot_voice.now_playing.title)
+    queue_str = ""
+    if len(queue) > 0:
+        for i in range(min(len(queue) - (5 * (page - 1)), 5)):
+            queue_str += f"{i + ((page - 1) * 5) + 1}. {queue[i].title}\n"
+        embed.add_field(name="Upcoming Songs", value=queue_str, inline=False)
+
+    if bot_voice.loop:
+        embed.set_footer(text="Looping song.", icon_url=disc_gif)
+    elif bot_voice.loop_all:
+        embed.set_footer(text="Looping queue.", icon_url=disc_gif)
+    else:
+        embed.set_footer(text="Playing queue.", icon_url=disc_gif)
+    return embed
 
 
 class Music(commands.Cog):
@@ -136,8 +189,8 @@ class Music(commands.Cog):
             bot_handler = BotVoiceHandler(ctx.channel)
 
             if not ctx.voice_client:
-                if guild_id not in voice_state:
-                    voice_state[guild_id] = bot_handler
+                if guild_id not in bot_voice:
+                    bot_voice[guild_id] = bot_handler
                 bot_handler.voice = await ctx.message.author.voice.channel.connect()
             title = "Nabi Bobet Tau"
             bot_handler.queue(MusicObj("../KeriaBot/Animal Crossing  Nabi Bobet Tau.mp3", "Nabi Bobet Tau"))
@@ -160,6 +213,7 @@ class Music(commands.Cog):
         """
         if ctx.voice_client:
             await ctx.guild.voice_client.disconnect()
+            stop_thread['done'] = True
             await ctx.send("Disconnected.")
         else:
             await ctx.send("I'm not in a voice channel.")
@@ -169,7 +223,7 @@ class Music(commands.Cog):
         if after.channel is None and member == self.bot.user:
             if member.guild.voice_client is not None:
                 member.guild.voice_client.cleanup()
-            del voice_state[member.guild.id]
+            del bot_voice[member.guild.id]
 
     @commands.hybrid_command(aliases=['p'])
     async def play(self, ctx, *, search):
@@ -198,11 +252,11 @@ class Music(commands.Cog):
             await ctx.send("You must be connected to a voice channel.", ephemeral=True)
             return
 
-        if guild_id in voice_state:
-            bot_handler = voice_state[guild_id]
+        if guild_id in bot_voice:
+            bot_handler = bot_voice[guild_id]
         else:
             bot_handler = BotVoiceHandler(ctx.channel)
-            voice_state[guild_id] = bot_handler
+            bot_voice[guild_id] = bot_handler
 
         if not ctx.voice_client:
             voice = await ctx.message.author.voice.channel.connect()
@@ -224,23 +278,43 @@ class Music(commands.Cog):
         :param ctx: context
         :return: None
         """
+        page = [1]
         id = ctx.message.guild.id
-        if id in voice_state and voice_state[id]:
-            queue = voice_state[id].songs
-            embed = discord.Embed(title="Queue")
-            embed.add_field(name="Now Playing", value=voice_state[id].now_playing.title)
-            queue_str = ""
+        if id in bot_voice and bot_voice[id]:
+            embed = display_queue(bot_voice[id], page=page[0])
+            queue = bot_voice[id].songs
+            queue_view = View()
+            next_button = Button(label="Next", style=discord.ButtonStyle.blurple)
+            back_button = Button(label="Back", style=discord.ButtonStyle.grey)
+            queue_view.add_item(back_button)
+            queue_view.add_item(next_button)
+            back_button.disabled = True
+            next_button.disabled = True
+
+            async def next_button_callback(interaction: discord.Interaction):
+                page[0] += 1
+                embed = display_queue(bot_voice[interaction.guild_id], page=page[0])
+                queue = bot_voice[interaction.guild_id].songs
+                if len(queue) - ((page[0] - 1) * 5) <= 5:
+                    next_button.disabled = True
+                back_button.disabled = False
+                await interaction.response.edit_message(embed=embed, view=queue_view)
+
+            async def back_button_callback(interaction: discord.Interaction):
+                page[0] -= 1
+                embed = display_queue(bot_voice[interaction.guild_id], page=page[0])
+                if page[0] == 1:
+                    back_button.disabled = True
+                next_button.disabled = False
+                await interaction.response.edit_message(embed=embed, view=queue_view)
+
             if len(queue) > 0:
-                for i in range(len(queue)):
-                    queue_str += f"{i + 1}. {queue[i].title}\n"
-                embed.add_field(name="Upcoming Songs", value=queue_str, inline=False)
-            if voice_state[id].loop:
-                embed.set_footer(text="Looping song.", icon_url=disc_gif)
-            elif voice_state[id].loop_all:
-                embed.set_footer(text="Looping queue.", icon_url=disc_gif)
-            else:
-                embed.set_footer(text="Playing queue.", icon_url=disc_gif)
-            await ctx.send(embed=embed)
+                if len(queue) > 5:
+                    next_button.disabled = False
+
+            next_button.callback = next_button_callback
+            back_button.callback = back_button_callback
+            await ctx.send(embed=embed, view=queue_view)
         else:
             await ctx.send("Queue is empty.")
 
@@ -252,8 +326,8 @@ class Music(commands.Cog):
         :return: None
         """
         id = ctx.message.guild.id
-        if id in voice_state and voice_state[id] and check_same_voice_channel(ctx):
-            voice_state[id].clear_queue()
+        if id in bot_voice and bot_voice[id] and check_same_voice_channel(ctx):
+            bot_voice[id].clear_queue()
         await ctx.send("Queue cleared.")
 
     @commands.hybrid_command(name="skip")
@@ -265,7 +339,7 @@ class Music(commands.Cog):
         """
         id = ctx.message.guild.id
         if check_same_voice_channel(ctx):
-            voice_state[id].voice.pause()
+            bot_voice[id].voice.pause()
             await ctx.send("Skipping to next song.")
             await self.check_queue(ctx, ctx.message.guild.id)
         else:
@@ -280,7 +354,7 @@ class Music(commands.Cog):
         """
         id = ctx.message.guild.id
         if check_same_voice_channel(ctx):
-            voice_state[id].voice.pause()
+            bot_voice[id].voice.pause()
             await ctx.send("Paused.")
         else:
             await ctx.send("You have to be connected to a voice channel to use this command.", ephemeral=True)
@@ -294,7 +368,7 @@ class Music(commands.Cog):
         """
         id = ctx.message.guild.id
         if check_same_voice_channel(ctx):
-            voice_state[id].voice.resume()
+            bot_voice[id].voice.resume()
             await ctx.send("Resuming...")
         else:
             await ctx.send("You have to be connected to a voice channel to use this command.", ephemeral=True)
@@ -309,7 +383,7 @@ class Music(commands.Cog):
         :return:
         """
         id = ctx.message.guild.id
-        bot_handler = voice_state[id]
+        bot_handler = bot_voice[id]
         if check_same_voice_channel(ctx):
             if type == "all":
                 bot_handler.set_loop_all()
@@ -335,7 +409,7 @@ class Music(commands.Cog):
         :return: None
         """
         guild_id = ctx.message.guild.id
-        bot_handler = voice_state[guild_id]
+        bot_handler = bot_voice[guild_id]
         if 1 <= num <= len(bot_handler.songs):
             song = bot_handler.remove_song(num)
             await ctx.send(f"`{song.title}` has been removed from queue.")
@@ -355,7 +429,7 @@ class Music(commands.Cog):
         :return: None
         """
         id = ctx.message.guild.id
-        bot_handler = voice_state[id]
+        bot_handler = bot_voice[id]
         if len(bot_handler.songs) > 1:
             bot_handler.shuffle_queue()
             await ctx.send("Queue has been shuffled.")
@@ -365,32 +439,41 @@ class Music(commands.Cog):
 
     async def start_playing(self, ctx):
         id = ctx.message.guild.id
-        song = voice_state[id].now_playing
+        song = bot_voice[id].now_playing
         source = song.make_audio_source()
         await ctx.send(f'Now playing `{song.title}`')
-        voice_state[id].voice.play(source,
-                                   after=lambda e=None: asyncio.run_coroutine_threadsafe(self.after_playing(ctx, e),
+        bot_voice[id].voice.play(source,
+                                 after=lambda e=None: asyncio.run_coroutine_threadsafe(self.after_playing(ctx, e),
                                                                                          self.bot.loop))
 
     async def after_playing(self, ctx, error):
         id = ctx.message.guild.id
         if error:
-            voice_state[id].channel.send("Sorry, something happened. Try again later.", ephemeral=True)
+            bot_voice[id].channel.send("Sorry, something happened. Try again later.", ephemeral=True)
             raise error
         else:
             id = ctx.message.guild.id
-            if id in voice_state and voice_state[id]:
+            if id in bot_voice and bot_voice[id]:
                 await self.check_queue(ctx, ctx.message.guild.id)
 
     async def queue_song(self, ctx, search_type, search):
-        url, title = await search_type(search)
+        try:
+            info, videos = await search_type(search)
+        except NoSongFoundError:
+            return
+        url = info[0]
+        title = info[1]
         guild_id = ctx.message.guild.id
+        if videos:
+            stop_thread['done'] = False
+            p = Thread(target=asyncio.run, args=(handle_playlist_videos(videos, self.queue_song, ctx),))
+            p.start()
         song = MusicObj(url, title)
-        voice_state[guild_id].queue(song)
+        bot_voice[guild_id].queue(song)
         return song
 
     async def check_queue(self, ctx, id):
-        bot_handler = voice_state[id]
+        bot_handler = bot_voice[id]
         if bot_handler.loop:
             song = bot_handler.now_playing
         else:
