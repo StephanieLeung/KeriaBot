@@ -3,85 +3,20 @@ import asyncio
 import discord
 from discord.ext import commands
 from discord.ui import Button, View
-import random
 from cookie import local_get_info, local_update_cookie
+
+from cardgame import Deck, Player
 
 suits = ["spades", "hearts", "diamonds", "clubs"]
 
 
-def make_cards(cards):
-    cards.clear()
-    for i in range(4):
-        suit = suits[i]
-        for j in range(13):
-            if j == 0:
-                cards.append(Card(suit, "A"))
-            elif j == 10:
-                cards.append(Card(suit, "J"))
-            elif j == 11:
-                cards.append(Card(suit, "Q"))
-            elif j == 12:
-                cards.append(Card(suit, "K"))
-            else:
-                cards.append(Card(suit, j+1))
-    random.shuffle(cards)
-    return cards
-
-
-def deal_cards(cards, num, hand=None):
-    if hand is None:
-        hand = []
-    for i in range(num):
-        card = random.choice(cards)
-        cards.remove(card)
-        hand.append(card)
-    return hand
-
-
-def calc_score(hand):
-    hand_values = []
-    for card in hand:
-        hand_values.append(card.get_value())
-
-    for i in range(len(hand_values)):
-        if hand_values[i] == 0:
-            if sum(hand_values) + 11 > 21:
-                hand_values.pop(i)
-                hand_values.insert(i, 1)
-            else:
-                hand_values.pop(i)
-                hand_values.insert(i, 11)
-    return sum(hand_values)
-
-
-class Card:
-    def __init__(self, suit, value):
-        self.suit = suit
-        self.value = value
-
-    def __str__(self):
-        return f":{self.suit}: {self.value}"
-
-    def get_value(self):
-        try:
-            value = int(self.value)
-            return value
-        except ValueError:
-            if self.value == "A":
-                return 0
-            else:
-                return 10
-
-
-def handle_dealer(cards, dealer_hand, loop=False):
-    dscore = calc_score(dealer_hand)
-    if dscore < 16:
+def handle_dealer(cards: Deck, dealer: Player, loop=False):
+    if dealer.score < 16 and len(dealer) < 5:
         if loop:
-            return handle_dealer(cards, deal_cards(cards, 1, dealer_hand))
+            dealer.draw_card(cards)
+            return handle_dealer(cards, dealer, loop=True)
         else:
-            return deal_cards(cards, 1, dealer_hand)
-    else:
-        return dealer_hand
+            return dealer.draw_card(cards)
 
 
 async def handle_bjack_scores(ctx, bet, pscore, dscore, cookies):
@@ -101,9 +36,8 @@ async def handle_bjack_scores(ctx, bet, pscore, dscore, cookies):
         await ctx.send("Bust! Dealer loses.")
     elif dscore == pscore:
         await ctx.send("Tie.")
-    elif dscore == 21 or dscore > pscore:
-        if dscore == 21:
-            d_win = "Blackjack. " + d_win
+    elif dscore == 21:
+        d_win = "Blackjack. " + d_win
         cookies -= bet
         await ctx.send(d_win)
     else:
@@ -118,8 +52,8 @@ async def handle_bjack_scores(ctx, bet, pscore, dscore, cookies):
 
 async def handle_mbjack_scores(ctx, players, hands, dscore):
     pscore = []
-    for i in range(len(players)):
-        pscore.append(calc_score(hands[i]))
+    for i in range(len(hands)):
+        pscore.append(hands[i].score)
 
     highest_val = 0
     index = None
@@ -148,12 +82,12 @@ async def handle_mbjack_scores(ctx, players, hands, dscore):
         await ctx.send(f"{win} won!")
 
 
-def display_bjack_hand(player, player_hand, dealer):
+def display_bjack_hand(player, player_hand: Player, dealer: Player):
     embed = discord.Embed(title="Blackjack", description="Press the hit button to get another card, pass to end your "
                                                          "turn.")
     embed.add_field(name=player,
-                    value=" ".join(str(x) for x in player_hand) + f"\n**Score**: {calc_score(player_hand)}")
-    embed.add_field(name="Dealer", value=str(dealer[0]) + f"`   `\n**Score**: {calc_score([dealer[0]])}")
+                    value=" ".join(str(x) for x in player_hand.get_cards()) + f"\n**Score**: {player_hand.score}")
+    embed.add_field(name="Dealer", value=str(dealer.first_card()) + f"`   `\n**Score**: {dealer.first_score()}")
     return embed
 
 
@@ -169,17 +103,18 @@ class Blackjack(commands.Cog):
         :param bet: Amount of cookies to bet
         :return:
         """
-        cards = []
-        cards = make_cards(cards)
-        player_hand = deal_cards(cards, 2)
-        dealer_hand = deal_cards(cards, 2)
+        cards = Deck()
+        cards.shuffle()
+        player = Player(deck=cards, init_cards=2)
+        dealer = Player(deck=cards, init_cards=2)
+
         if bet == 0:
             return await ctx.send("You need to bet more than 0 cookies.", ephemeral=True)
         else:
             info = local_get_info(ctx.guild.id, ctx.author.id)
             if info['cookies'] < bet:
                 return await ctx.send(f"You don't have enough cookies. (**{info['cookies']}**)")
-        await self.handle_ongoing_bjack(ctx, bet, cards, player_hand, dealer_hand, info['cookies'])
+        await self.handle_ongoing_bjack(ctx, bet, cards, player, dealer, info['cookies'])
 
     @bjack.error
     async def bjack_error(self, ctx, error):
@@ -188,6 +123,7 @@ class Blackjack(commands.Cog):
         elif isinstance(error, commands.BadArgument):
             await ctx.send("Please enter a number as bet.")
         else:
+            print(error)
             await ctx.send("Oops. Something went wrong. Try again later.")
 
     @commands.hybrid_command(name="multibjack", aliases=['mbjack'])
@@ -209,19 +145,20 @@ class Blackjack(commands.Cog):
         players = []
 
         def check(reaction, user):
-            return str(reaction) == "✅"
+            return str(reaction) == "✅" and reaction.message == message
 
         async def add_user():
             start = False
             while not start:
                 try:
                     reaction, user = await self.bot.wait_for('reaction_add', check=check, timeout=10)
-                    if user not in players:
-                        players.append(user)
-                        await ctx.send(f"{user.mention} has been added to game.")
-                    else:
-                        players.remove(user)
-                        await ctx.send(f"{user.mention} has been removed from the game.")
+                    if not user.bot:
+                        if user not in players:
+                            players.append(user)
+                            await ctx.send(f"{user.mention} has been added to game.")
+                        else:
+                            players.remove(user)
+                            await ctx.send(f"{user.mention} has been removed from the game.")
 
                 except asyncio.TimeoutError:
                     if len(players) >= 1:
@@ -248,22 +185,16 @@ class Blackjack(commands.Cog):
         ret1, ret2 = await asyncio.gather(add_user(), timer(value))
         if ret1:
             await ctx.send("Starting game now...")
-            cards = make_cards([])
+            cards = Deck()
+            cards.shuffle()
             hands = []
-            last = []
-            for player in players:
-                hands.append(deal_cards(cards, 2))
-                last.append(False)
-            dealer = deal_cards(cards, 2)
-            await self.handle_ongoing_mbjack(ctx, make_cards([]), players, hands, dealer, last)
+            for _ in players:
+                hands.append(Player(cards, 2))
+            dealer = Player(cards, 2)
+            await self.handle_ongoing_mbjack(ctx, cards, players, hands, dealer)
 
-    async def handle_ongoing_mbjack(self, ctx, cards, players, player_hands, dealer, last):
-        pscores = []
+    async def handle_ongoing_mbjack(self, ctx, cards: Deck, player_names, players: list[Player], dealer: Player):
         embed = discord.Embed(title="Blackjack", description="Click the start button to start playing!")
-
-        for i in range(len(players)):
-            pscore = calc_score(player_hands[i])
-            pscores.append(pscore)
 
         start_view = View()
         start_button = Button(label="Start", style=discord.ButtonStyle.blurple)
@@ -274,88 +205,87 @@ class Blackjack(commands.Cog):
         game_view.add_item(hit_button)
         game_view.add_item(pass_button)
 
-        def check(last):
-            if all(x is True for x in last):
-                return True
-            return False
+        def check():
+            return all(player.is_done() is True for player in players)
 
         async def finish():
             start_button.callback = None
             hit_button.callback = None
             pass_button.callback = None
-            await self.after_mbjack(ctx, players, player_hands, pscores, dealer)
+            await self.after_mbjack(ctx, player_names, players, dealer)
+
 
         async def hit_button_callback(interaction: discord.Interaction):
-            i = players.index(interaction.user)
-            player_hands[i] = deal_cards(cards, 1, player_hands[i])
-            new_score = calc_score(player_hands[i])
-            pscores[i] = new_score
-            embed = display_bjack_hand(players[i].global_name, player_hands[i], dealer)
-            if new_score >= 21:
-                last[i] = True
+            i = player_names.index(interaction.user)
+            players[i].draw_card(cards)
+            embed = display_bjack_hand(player_names[i].global_name, players[i], dealer)
+            if players[i].score >= 21:
+                players[i].done()
                 await interaction.response.send_message(embed=embed, ephemeral=True)
-                await ctx.send(content=f"{players[i].mention} is finished.")
-                if check(last):
+                await ctx.send(content=f"{player_names[i].mention} is finished.")
+                if check():
                     await finish()
                 return
             await interaction.response.send_message(embed=embed, view=game_view, ephemeral=True)
 
         async def pass_button_callback(interaction: discord.Interaction):
-            i = players.index(interaction.user)
-            last[i] = True
+            i = player_names.index(interaction.user)
+            players[i].done()
 
-            await interaction.response.send_message(content=f"{players[i].mention} is finished.")
-            if check(last):
+            await interaction.response.send_message(content=f"{player_names[i].mention} is finished.")
+            if check():
                 await finish()
 
         hit_button.callback = hit_button_callback
         pass_button.callback = pass_button_callback
 
         async def start_button_callback(interaction: discord.Interaction):
-            if interaction.user not in players:
+            if interaction.user not in player_names:
                 await interaction.response.send_message(content=f"You are not part of this game.", ephemeral=True)
                 return
-            i = players.index(interaction.user)
-            embed = display_bjack_hand(players[i].global_name, player_hands[i], dealer)
-            if calc_score(player_hands[i]) == 21:
+            i = player_names.index(interaction.user)
+            embed = display_bjack_hand(player_names[i].global_name, players[i], dealer)
+
+            if players[i].score == 21:
                 await interaction.response.send_message(embed=embed, ephemeral=True)
-                await ctx.send(content=f"{players[i].mention} is finished.")
-                last[i] = True
+                await ctx.send(content=f"{player_names[i].mention} is finished.")
+                players[i].done()
+                if check():
+                    await finish()
                 return
+
             await interaction.response.send_message(embed=embed, view=game_view, ephemeral=True)
 
         start_button.callback = start_button_callback
 
-        dealer = handle_dealer(cards, dealer, loop=True)
+        handle_dealer(cards, dealer, loop=True)
         await ctx.send(embed=embed, view=start_view)
 
-    async def after_mbjack(self, ctx, players, player_hands, pscore, dealer):
+    async def after_mbjack(self, ctx, player_names, players, dealer):
         await ctx.send("All players are ready.")
-        dscore = calc_score(dealer)
         embed = discord.Embed(title="Blackjack", description="Displaying final scores for all players and dealer.")
-        for i in range(len(players)):
-            embed.add_field(name=players[i].global_name, value=" ".join(str(x) for x in player_hands[i]) + f"\n**Score**: {pscore[i]}", inline=False)
-        embed.add_field(name="Dealer", value=" ".join(str(x) for x in dealer) + f"\n**Score**: {dscore}")
+        for i in range(len(player_names)):
+            embed.add_field(name=player_names[i].global_name,
+                            value=" ".join(str(x) for x in players[i].get_cards()) +
+                                  f"\n**Score**: {players[i].score}", inline=False)
+        embed.add_field(name="Dealer", value=" ".join(str(x) for x in dealer.get_cards()) +
+                                             f"\n**Score**: {dealer.score}")
         await ctx.send(embed=embed)
-        await handle_mbjack_scores(ctx, players, player_hands, dscore)
+        await handle_mbjack_scores(ctx, player_names, players, dealer.score)
         return
 
-    async def handle_ongoing_bjack(self, ctx, bet, cards, player, dealer, cookies, last=False):
-        pscore = calc_score(player)
-
-        embed = discord.Embed(title="Blackjack", description="Type h/hit to get another card, p/pass to end your turn.")
-        embed.add_field(name=ctx.author.global_name, value=" ".join(str(x) for x in player) + f"\n**Score**: {pscore}")
-        embed.add_field(name="Dealer", value=str(dealer[0]) + f"`   `\n**Score**: {calc_score([dealer[0]])}")
+    async def handle_ongoing_bjack(self, ctx, bet, cards: Deck, player: Player, dealer: Player, cookies):
+        embed = display_bjack_hand(ctx.author.global_name, player, dealer)
         message = await ctx.send(embed=embed)
 
-        if pscore >= 21 or last:
-            dealer = handle_dealer(cards, dealer, loop=True)
-            dscore = calc_score(dealer)
+        if player.score >= 21 or player.is_done():
+            handle_dealer(cards, dealer, loop=True)
 
             embed.remove_field(1)
-            embed.add_field(name="Dealer", value=" ".join(str(x) for x in dealer) + f"\n**Score**: {dscore}")
+            embed.add_field(name="Dealer", value=" ".join(str(x) for x in dealer.get_cards()) +
+                                                 f"\n**Score**: {dealer.score}")
             await message.edit(embed=embed)
-            return await handle_bjack_scores(ctx, bet, pscore, dscore, cookies)
+            return await handle_bjack_scores(ctx, bet, player.score, dealer.score, cookies)
 
         not_sent = True
 
@@ -370,19 +300,16 @@ class Blackjack(commands.Cog):
                 await ctx.send("Please enter h/hit or p/pass. Exit if you want to quit the game")
                 continue
             else:
-                last = False
                 if content == "exit":
                     await ctx.send("Exited Blackjack game. No cookies have been taken.")
                     return
                 elif content == "h" or content == "hit":
-                    player = deal_cards(cards, 1, player)
+                    player.draw_card(cards)
                 else:
-                    last = True
-                dealer = handle_dealer(cards, dealer)
-                await self.handle_ongoing_bjack(ctx, bet, cards, player, dealer, cookies, last)
+                    player.done()
+                await self.handle_ongoing_bjack(ctx, bet, cards, player, dealer, cookies)
                 not_sent = False
 
 
 async def setup(bot):
     await bot.add_cog(Blackjack(bot))
-

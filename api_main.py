@@ -76,7 +76,7 @@ def extract_data(url):
 
 @app.get('/')
 async def read_root():
-    return {"Hello": "World"}
+    return {"message": "Root path for Keria Bot backend. Authentication key needed for DB access."}
 
 
 @app.get("/music/{search}")

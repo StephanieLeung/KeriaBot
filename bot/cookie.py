@@ -7,8 +7,7 @@ from api_main import headers
 
 import sqlite3
 
-main_url = "https://keriabot.onrender.com/"
-test_url = "http://localhost:8000/"
+main_url = "https://keria-bot-api.vercel.app/"
 
 def local_get_info(guild_id, user_id):
     db = sqlite3.connect("bot.db")
@@ -84,7 +83,7 @@ def get_cookies(guild_id, author_id):
 
 
 async def __get_info(guild_id, user_id):
-    url = test_url + f"user/{guild_id}/{user_id}"
+    url = main_url + f"user/{guild_id}/{user_id}"
 
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as r:
@@ -95,7 +94,7 @@ async def __get_info(guild_id, user_id):
 
 
 async def __update_cookie(guild_id, user_id, cookie, daily=False):
-    url = test_url + f"user/update"
+    url = main_url + f"user/update"
     data = {"guild_id": guild_id, "user_id": user_id, "cookies": cookie, "daily": daily}
 
     async with aiohttp.ClientSession() as session:

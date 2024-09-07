@@ -1,4 +1,3 @@
-import datetime
 import os
 import sqlite3
 
@@ -46,7 +45,7 @@ async def update_db():
         ''')
         db.commit()
 
-    url = "http://localhost:8000/allusers"
+    url = "https://keria-bot-api.vercel.app/allusers"
     async with aiohttp.ClientSession(headers=headers) as session:
         async with session.get(url) as r:
             if r.status == 200:
@@ -107,9 +106,12 @@ async def global_sync(ctx):
 @bot.command(name='reload', hidden=True)
 async def reload(ctx):
     if int(ctx.author.id) == int(OWNER):
-        for extension in EXTENSIONS:
-            await bot.reload_extension(extension)
-        await ctx.send("Reloaded all extensions.")
+        try:
+            for extension in EXTENSIONS:
+                await bot.reload_extension(extension)
+            await ctx.send("Reloaded all extensions.")
+        except:
+            await ctx.send("Something went wrong. Please check the extensions.")
     else:
         await ctx.send(f"You have to be the owner of this app to run this command.")
 
