@@ -74,24 +74,3 @@ def update_cookies(guild_id, author_id, add):
 def get_cookies(guild_id, author_id):
     info = local_get_info(guild_id, author_id)
     return info['cookies']
-
-
-# async def __get_info(guild_id, user_id):
-#     url = main_url + f"user/{guild_id}/{user_id}"
-#
-#     async with aiohttp.ClientSession() as session:
-#         async with session.get(url) as r:
-#             if r.status == 200:
-#                 info = await r.json()
-#         await session.close()
-#     return info
-#
-#
-# async def __update_cookie(guild_id, user_id, cookie, daily=False):
-#     url = main_url + f"user/update"
-#     data = {"guild_id": guild_id, "user_id": user_id, "cookies": cookie, "daily": daily}
-#
-#     async with aiohttp.ClientSession() as session:
-#         async with session.post(url, json=data) as r:
-#             pass
-#         await session.close()

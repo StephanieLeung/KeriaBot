@@ -16,6 +16,7 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix='mew ', intents=intents)
 
+
 @tasks.loop(minutes=30)
 async def update_to_db_thread():
     await update_from_local()

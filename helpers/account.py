@@ -6,6 +6,7 @@ from exceptions.NotEnoughCookiesError import NotEnoughCookiesError
 ARP = 0.20
 limit = 15000
 
+
 def interest_amount():
     interest = ARP / 365
     interest *= limit

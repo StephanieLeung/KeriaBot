@@ -45,17 +45,6 @@ user_db = db['UserDB']
 bank_db = db['BankDB']
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
-# ydl_opts = {
-#     'format': 'bestaudio/best',
-#     'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
-#     'quiet': True,
-#     'postprocessors': [{
-#         'key': 'FFmpegExtractAudio',
-#         'preferredcodec': 'mp3',
-#         'preferredquality': '192',
-#     }],
-# }
-
 ydl_opts = {
     'format': 'bestaudio/best',
     'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
@@ -63,9 +52,12 @@ ydl_opts = {
     'ignoreerrors': True,
     'skip_download': True,
     'extract_flat': True,
+    'username': 'oauth2',
+    'password': '',
+    'verbose': True,
     'postprocessors': [{
         'key': 'FFmpegExtractAudio',
-        'preferredcodec': 'm4a',
+        'preferredcodec': 'opus',
         'preferredquality': '192',
     }],
 }
@@ -75,7 +67,11 @@ ydl_playlist_opts = {
     'skip_download': True,
     'ignoreerrors': True,
     'quiet': True,
+    'playlist_end': 15,
+    'username': 'oauth2',
+    'password': '',
 }
+
 
 class User(BaseModel):
     guild_id: int
@@ -109,33 +105,33 @@ async def read_root():
 
 
 @app.get("/music/{search}")
-async def search_youtube(search: str, response: Response):
+async def search_youtube(search: str):
     search = search.replace(" ", "+")
     search_url = "https://www.youtube.com/results?search_query=music+" + quote(search)
     info = extract_data(search_url)
     if info is None:
-        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        raise HTTPException(status_code=503, detail=f"No results found for {search}")
     return extract_data(search_url)
 
 
 @app.get("/music-id/{search}")
-async def search_youtube_id(search: str, response: Response):
+async def search_youtube_id(search: str):
     play_url = "https://www.youtube.com/watch?v=" + search
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(play_url, download=False)
     if info is None:
-        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        raise HTTPException(status_code=503, detail=f"No results found for {search}")
     return info
 
 @app.get("/music-playlist/{search}")
-async def search_youtube_playlist(search: str, response: Response):
+async def search_youtube_playlist(search: str):
     play_url = "https://www.youtube.com/playlist?list=" + search
     with yt_dlp.YoutubeDL(ydl_playlist_opts) as ydl:
         info = ydl.extract_info(play_url, download=False)
 
     if info is None:
-        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        raise HTTPException(status_code=503, detail=f"No results found for {search}")
     return info
 
 

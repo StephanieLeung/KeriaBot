@@ -43,8 +43,7 @@ async def update_db():
         ''')
         db.commit()
 
-    # url = "https://keria-bot-api.vercel.app/allusers"
-    url = "http://localhost:8000/allusers"
+    url = main_url + "allusers"
     async with aiohttp.ClientSession(headers=headers) as session:
         async with session.get(url) as r:
             if r.status == 200:
@@ -52,8 +51,7 @@ async def update_db():
         await session.close()
     user_info = user_info['all data']
 
-    # url = "https://keria-bot-api.vercel.app/allbank"
-    url = "http://localhost:8000/allbank"
+    url = main_url + "allbank"
     async with aiohttp.ClientSession(headers=headers) as session:
         async with session.get(url) as r:
             if r.status == 200:
@@ -76,10 +74,9 @@ async def update_db():
     cursor.close()
     db.close()
 
-async def update_from_local():
-    # url = main_url + f"allusers/update"
-    url = "http://localhost:8000/allusers/update"
 
+async def update_from_local():
+    url = main_url + f"allusers/update"
 
     db = sqlite3.connect("bot.db")
     cursor = db.cursor()
