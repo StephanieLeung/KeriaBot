@@ -1,7 +1,7 @@
 from pathlib import Path
 import sqlite3
 import aiohttp
-from api_main import headers
+from app.api_main import headers
 
 
 main_url = "https://keria-bot-api.vercel.app/"

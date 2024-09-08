@@ -53,6 +53,15 @@ class Bank(commands.Cog):
             await ctx.send("The loan amount you're trying to borrow is over the limit. The limit is currently "
                            "**15000** cookies.")
 
+    @loan.error
+    async def loan_error(self, ctx, error):
+        if isinstance(error, commands.MissingRequiredArgument):
+            await ctx.send("You're missing an argument. Please enter the amount you want to loan.")
+        elif isinstance(error, commands.BadArgument):
+            await ctx.send("Please enter a number as the loan amount.")
+        else:
+            await ctx.send("Oops. Something went wrong. Try again later.")
+
     @commands.command(name="payment")
     async def payment(self, ctx, amount: int):
         account = create_account(ctx.guild.id, ctx.author.id)
@@ -62,6 +71,15 @@ class Bank(commands.Cog):
             await ctx.send(f"Payment has been processed. You now have **{account.due}** cookies due by the payment date.")
         except NotEnoughCookiesError:
             await ctx.send("You don't have enough cookies to pay back this amount.")
+
+    @payment.error
+    async def payment_error(self, ctx, error):
+        if isinstance(error, commands.MissingRequiredArgument):
+            await ctx.send("You're missing an argument. Please enter the amount you want to pay back.")
+        elif isinstance(error, commands.BadArgument):
+            await ctx.send("Please enter a number as the amount to pay back.")
+        else:
+            await ctx.send("Oops. Something went wrong. Try again later.")
 
 
 async def setup(bot):
