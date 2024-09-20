@@ -180,11 +180,17 @@ async def get_users(guild_id: int, auth: HTTPBasicAuth = Depends(auth_user)):
 async def get_all_user_data(auth: HTTPBasicAuth = Depends(auth_user)):
     result = user_db.find()
     data = []
-    for document in result:
-        data.append({"guild_id": document['guild_id'],
-                     "user_id": document['user_id'],
-                     "cookies": document['cookies'],
-                     "datetime": document['datetime']})
+    for document in result:\
+        try:
+            data.append({"guild_id": document['guild_id'],
+                         "user_id": document['user_id'],
+                         "cookies": document['cookies'],
+                         "datetime": document['datetime']})
+        except KeyError:
+            data.append({"guild_id": document['guild_id'],
+                         "user_id": document['user_id'],
+                         "cookies": document['cookies'],
+                         "datetime": None})
     return {"all data": data}
 
 

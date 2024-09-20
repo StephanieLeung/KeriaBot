@@ -1,7 +1,7 @@
 import datetime
 
-from exceptions.LimitReachedError import LimitReachedError
-from exceptions.NotEnoughCookiesError import NotEnoughCookiesError
+from exceptions.LimitReached import LimitReachedError
+from exceptions.NotEnoughCookies import NotEnoughCookiesError
 
 ARP = 0.20
 limit = 15000

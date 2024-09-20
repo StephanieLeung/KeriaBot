@@ -1,4 +1,3 @@
-import aiohttp
 import datetime
 
 import sqlite3
