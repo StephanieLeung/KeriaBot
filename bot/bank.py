@@ -2,8 +2,8 @@ import discord
 from discord.ext import commands
 from discord.ui import Button, View
 
-from exceptions.LimitReachedError import LimitReachedError
-from exceptions.NotEnoughCookiesError import NotEnoughCookiesError
+from exceptions.LimitReached import LimitReachedError
+from exceptions.NotEnoughCookies import NotEnoughCookiesError
 from helpers.bankFuncs import *
 
 

@@ -1,6 +1,5 @@
 import asyncio
 import random
-from multiprocessing import Process
 from threading import Thread
 
 import aiohttp
@@ -17,7 +16,9 @@ from exceptions.NoSongFound import NoSongFoundError
 
 bot_voice = {}
 main_url = "https://keriabot.onrender.com/"
-test_url = "http://localhost:8000/"
+# test_url = "http://localhost:8000/"
+test_url = "http://host.docker.internal:8000/"
+
 disc_gif = ("https://media0.giphy.com/media/LwBTamVefKJxmYwDba/giphy.gif?cid"
             "=6c09b952g0ljvqtoads16f77bd3hpv1cwibrnm3b3pmzyifz&rid=giphy.gif&ct=s")
 stop_thread = {"done": False}
@@ -280,43 +281,44 @@ class Music(commands.Cog):
         """
         page = [1]
         id = ctx.message.guild.id
-        if id in bot_voice and bot_voice[id]:
-            embed = display_queue(bot_voice[id], page=page[0])
+
+        async def next_button_callback(interaction: discord.Interaction):
+            page[0] += 1
+            embed = display_queue(bot_voice[interaction.guild_id], page=page[0])
+            queue = bot_voice[interaction.guild_id].songs
+            if len(queue) - ((page[0] - 1) * 5) <= 5:
+                next_button.disabled = True
+            back_button.disabled = False
+            await interaction.response.edit_message(embed=embed, view=queue_view)
+
+        async def back_button_callback(interaction: discord.Interaction):
+            page[0] -= 1
+            embed = display_queue(bot_voice[interaction.guild_id], page=page[0])
+            if page[0] == 1:
+                back_button.disabled = True
+            next_button.disabled = False
+            await interaction.response.edit_message(embed=embed, view=queue_view)
+
+        try:
             queue = bot_voice[id].songs
-            queue_view = View()
-            next_button = Button(label="Next", style=discord.ButtonStyle.blurple)
-            back_button = Button(label="Back", style=discord.ButtonStyle.grey)
-            queue_view.add_item(back_button)
-            queue_view.add_item(next_button)
-            back_button.disabled = True
-            next_button.disabled = True
+            if queue or bot_voice[id].now_playing is not None:
+                embed = display_queue(bot_voice[id], page=page[0])
+                queue_view = View()
+                next_button = Button(label="Next", style=discord.ButtonStyle.blurple)
+                back_button = Button(label="Back", style=discord.ButtonStyle.grey)
+                queue_view.add_item(back_button)
+                queue_view.add_item(next_button)
+                back_button.disabled = True
+                next_button.disabled = True
 
-            async def next_button_callback(interaction: discord.Interaction):
-                page[0] += 1
-                embed = display_queue(bot_voice[interaction.guild_id], page=page[0])
-                queue = bot_voice[interaction.guild_id].songs
-                if len(queue) - ((page[0] - 1) * 5) <= 5:
-                    next_button.disabled = True
-                back_button.disabled = False
-                await interaction.response.edit_message(embed=embed, view=queue_view)
-
-            async def back_button_callback(interaction: discord.Interaction):
-                page[0] -= 1
-                embed = display_queue(bot_voice[interaction.guild_id], page=page[0])
-                if page[0] == 1:
-                    back_button.disabled = True
-                next_button.disabled = False
-                await interaction.response.edit_message(embed=embed, view=queue_view)
-
-            if len(queue) > 0:
                 if len(queue) > 5:
                     next_button.disabled = False
 
-            next_button.callback = next_button_callback
-            back_button.callback = back_button_callback
-            await ctx.send(embed=embed, view=queue_view)
-        else:
-            await ctx.send("Queue is empty.")
+                next_button.callback = next_button_callback
+                back_button.callback = back_button_callback
+                await ctx.send(embed=embed, view=queue_view)
+        except KeyError:
+            await ctx.send("I'm not playing any songs right now.")
 
     @commands.hybrid_command(name="clear", aliases=['qc'])
     async def clear(self, ctx):
