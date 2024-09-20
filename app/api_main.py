@@ -146,7 +146,10 @@ async def search_youtube(search: str):
 async def user_info(guild_id: int, user_id: int, auth: HTTPBasicAuth = Depends(auth_user)):
     result = user_db.find_one({"guild_id": guild_id, "user_id": user_id})
     if result is not None:
-        return {"cookies": result['cookies'], "datetime": result['datetime']}
+        try:
+            return {"cookies": result['cookies'], "datetime": result['datetime']}
+        except KeyError:
+            return {"cookies": result['cookies'], "datetime": None}
     user_db.insert_one({"guild_id": guild_id, "user_id": user_id, "cookies": 0, "datetime": None})
     return {"cookies": 0, "datetime": None}
 
@@ -177,7 +180,7 @@ async def get_users(guild_id: int, auth: HTTPBasicAuth = Depends(auth_user)):
 async def get_all_user_data(auth: HTTPBasicAuth = Depends(auth_user)):
     result = user_db.find()
     data = []
-    for document in result:
+    for document in result:\
         try:
             data.append({"guild_id": document['guild_id'],
                          "user_id": document['user_id'],
@@ -223,7 +226,7 @@ async def update_user_db(data: list[BankAccount], auth: HTTPBasicAuth = Depends(
             {"guild_id": item.guild_id, "user_id": item.user_id},
             {"$set": {"loan": item.loan, "payment_date": item.payment_date, "due": item.due}},
             upsert=True))
-    user_db.bulk_write(operations)
+    bank_db.bulk_write(operations)
 
 
 if __name__ == '__main__':
