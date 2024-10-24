@@ -1,4 +1,5 @@
 import asyncio
+import logging
 
 import discord
 from discord.ext import commands
@@ -19,35 +20,39 @@ def handle_dealer(cards: Deck, dealer: Player, loop=False):
             return dealer.draw_card(cards)
 
 
-async def handle_bjack_scores(ctx, bet, pscore, dscore, cookies):
+async def handle_bjack_scores(ctx, bet, pscore, dscore):
     p_win = "Player wins!"
     d_win = "Dealer wins!"
+    add = 0
     if pscore > 21:
-        cookies -= bet
+        add -= bet
         await ctx.send("Bust! Player loses.")
     elif pscore == 21 or pscore > dscore:
         if pscore == 21:
             p_win = "Blackjack. " + p_win
-            cookies += bet
-        cookies += bet
+            add += bet
+        add += bet
         await ctx.send(p_win)
     elif dscore > 21:
-        cookies += bet
+        add += bet
         await ctx.send("Bust! Dealer loses.")
     elif dscore == pscore:
         await ctx.send("Tie.")
     elif dscore == 21:
         d_win = "Blackjack. " + d_win
-        cookies -= bet
+        add -= bet
         await ctx.send(d_win)
     else:
-        cookies -= bet
+        add -= bet
         await ctx.send(d_win)
-    if cookies < 0:
-        cookies = 0
-    local_update_cookie(ctx.guild.id, ctx.author.id, cookies)
-    await ctx.send(f"You now have **{cookies}** cookies in your bank.")
-    return
+    cookies = update_cookies(ctx.guild.id, ctx.author.id, add)
+    cookie_msg = ". "
+    if add < 0:
+        cookie_msg += "You lost **" + str(add) + "** cookies. "
+    elif add > 0:
+        cookie_msg += "You won **" + str(add) + "** cookies. "
+    cookie_msg += f"You now have **{cookies}** cookies in your bank."
+    await ctx.send(ctx.author.mention + cookie_msg)
 
 
 async def handle_mbjack_scores(ctx, players, hands, dscore):
@@ -114,7 +119,7 @@ class Blackjack(commands.Cog):
             cookies = get_cookies(ctx.guild.id, ctx.author.id)
             if cookies < bet:
                 return await ctx.send(f"You don't have enough cookies. (**{cookies}**)")
-        await self.handle_ongoing_bjack(ctx, bet, cards, player, dealer, cookies)
+        await self.handle_ongoing_bjack(ctx, bet, cards, player, dealer)
 
     @bjack.error
     async def bjack_error(self, ctx, error):
@@ -123,7 +128,7 @@ class Blackjack(commands.Cog):
         elif isinstance(error, commands.BadArgument):
             await ctx.send("Please enter a number as bet.")
         else:
-            print(error)
+            logging.warning("An error occured while running bjack." + str(error))
             await ctx.send("Oops. Something went wrong. Try again later.")
 
     @commands.hybrid_command(name="multibjack", aliases=['mbjack'])
@@ -274,7 +279,7 @@ class Blackjack(commands.Cog):
         await handle_mbjack_scores(ctx, player_names, players, dealer.score)
         return
 
-    async def handle_ongoing_bjack(self, ctx, bet, cards: Deck, player: Player, dealer: Player, cookies):
+    async def handle_ongoing_bjack(self, ctx, bet, cards: Deck, player: Player, dealer: Player):
         embed = display_bjack_hand(ctx.author.global_name, player, dealer)
         message = await ctx.send(embed=embed)
 
@@ -285,7 +290,7 @@ class Blackjack(commands.Cog):
             embed.add_field(name="Dealer", value=" ".join(str(x) for x in dealer.get_cards()) +
                                                  f"\n**Score**: {dealer.score}")
             await message.edit(embed=embed)
-            return await handle_bjack_scores(ctx, bet, player.score, dealer.score, cookies)
+            return await handle_bjack_scores(ctx, bet, player.score, dealer.score)
 
         not_sent = True
 
@@ -307,7 +312,7 @@ class Blackjack(commands.Cog):
                     player.draw_card(cards)
                 else:
                     player.done()
-                await self.handle_ongoing_bjack(ctx, bet, cards, player, dealer, cookies)
+                await self.handle_ongoing_bjack(ctx, bet, cards, player, dealer)
                 not_sent = False
 
 

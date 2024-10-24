@@ -39,10 +39,6 @@ class MusicObj:
         if self.url == "../KeriaBot/Animal Crossing  Nabi Bobet Tau.mp3":
             source = FFmpegPCMAudio(self.url)
         else:
-            # # source = FFmpegPCMAudio(self.url,
-            #                         before_options="-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -ss "
-            #                                        "00:00:00.00",
-            #                         options="-vn")
             source = FFmpegOpusAudio(self.url,
                                      before_options="-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -ss "
                                                     "00:00:00.00",

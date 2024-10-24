@@ -67,7 +67,10 @@ def local_get_all_info(guild_id):
 def update_cookies(guild_id, author_id, add):
     cookies = get_cookies(guild_id, author_id)
     cookies += add
+    if cookies < 0:
+        cookies = 0
     local_update_cookie(guild_id, author_id, cookies)
+    return cookies
 
 
 def get_cookies(guild_id, author_id):

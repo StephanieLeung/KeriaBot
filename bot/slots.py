@@ -1,6 +1,5 @@
 import asyncio
 
-import discord
 import random
 from discord.ext import commands
 
@@ -45,7 +44,6 @@ class Slots(commands.Cog):
         first_symbol = get_random_symbol()
         second_symbol = get_random_symbol()
         third_symbol = get_random_symbol()
-        print(first_symbol, second_symbol, third_symbol)
         cookies = get_cookies(ctx.guild.id, ctx.author.id)
         if bet > cookies:
             await ctx.send(f"You don't have enough cookies to make this bet. ({cookies})", ephemeral=True)

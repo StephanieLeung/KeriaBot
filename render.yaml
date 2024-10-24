@@ -1,9 +1,0 @@
-services:
-  # A Docker web service
-  - type: web
-    name: KeriaBot
-    runtime: python
-    plan: free
-    autoDeploy: false
-    buildCommand: pip install -r requirements_temp.txt
-    startCommand: uvicorn app/api_main:app --host 0.0.0.0 --port $PORT

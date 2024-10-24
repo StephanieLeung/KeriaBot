@@ -1,27 +1,43 @@
 import os
 from dotenv import load_dotenv
 from discord.ext import commands, tasks
-from simplecmd import *
 import discord
+import logging
+
 from helpers.dbFuncs import *
+from helpers.restrictUsers import restricted_users
 
 load_dotenv()
 TOKEN = os.getenv('BOT_TOKEN')
 OWNER = os.getenv('OWNER')
 
-EXTENSIONS = ("simplecmd", "music", "blackjack", "cookie", "wordle", "slots", "bank")
+EXTENSIONS = ("simplecmd", "music", "blackjack", "cookie", "wordle", "slots", "bank", "study")
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
 
 bot = commands.Bot(command_prefix='mew ', intents=intents)
 
+logging.basicConfig(level=logging.INFO)
 
-@tasks.loop(minutes=30)
+
+@tasks.loop(hours=1)
 async def update_to_db_thread():
     await update_from_local()
-    print("Updated MongoDB!")
+    logging.info("All data updated in MongoDB.")
 
+
+@bot.check
+def check_for_restricted(ctx):
+    return not restricted_users.is_restricted(ctx.author.id)
+
+
+@bot.event
+async def on_command_error(ctx, error):
+    if isinstance(error, commands.CheckFailure):
+        await ctx.send(f"Sorry, you don't have permission to use this command right now.", ephemeral=True, delete_after=10)
+    else:
+        return
 
 @bot.event
 async def setup_hook() -> None:
@@ -35,7 +51,8 @@ async def on_ready():
     await bot.change_presence(status=discord.Status.idle, activity=discord.CustomActivity(name='CHKCHKBOOM'))
     if not update_to_db_thread.is_running():
         update_to_db_thread.start()
-    print(f'{bot.user.name} has connected to Discord!')
+
+    logging.info(f'{bot.user.name} has connected to Discord!')
 
 
 @bot.command(name='ssync', hidden=True)

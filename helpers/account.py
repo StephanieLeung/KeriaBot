@@ -24,6 +24,8 @@ class Account:
         else:
             self.payment_date = None
 
+        self.check_payment_date()
+
     def pay_due(self, amount: int):
         self.check_payment_date()
         if amount > self.cookies:
@@ -35,11 +37,12 @@ class Account:
 
     def check_payment_date(self):
         if self.payment_date is not None:
-            if datetime.datetime.now() > self.payment_date and self.due > 0:
+            if datetime.datetime.now() - self.payment_date >= datetime.timedelta(hours=20):
+                self.loan = 0
+
+            while datetime.datetime.now() > self.payment_date and self.due > 0:
                 self.due += round(interest_amount())
                 self.payment_date += datetime.timedelta(days=30)
-            elif datetime.datetime.now() - self.payment_date >= datetime.timedelta(hours=20):
-                self.loan = 0
 
     def make_loan(self, amount: int):
         try_loan = self.loan + amount

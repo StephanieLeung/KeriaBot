@@ -90,7 +90,8 @@ class Wordle(commands.Cog):
 
         embed.set_footer(text=f"Game ended. Guesses: {guess}/6")
         await msg.edit(embed=embed)
-        await ctx.send(f"The word was `{"".join(word).capitalize()}`.")
+        word = "".join(word).capitalize()
+        await ctx.send(f"The word was `{word}`.")
         if win:
             cookie += 70 - (guess * 10)
 
