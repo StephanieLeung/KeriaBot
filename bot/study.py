@@ -1,14 +1,16 @@
 import asyncio
+from typing import Optional
 
 import discord
 from discord.ext import commands
 from discord.ui import View, Button, TextInput, Modal
 
 from helpers.restrictUsers import restricted_users
-from helpers.todoItem import TodoItem, display_todo_embed
+from helpers.todoItem import TodoItem, display_todo_embed, check_buttons
 from helpers.cookieFuncs import update_cookies
 
 todo_threads = {}
+
 
 class ItemForm(Modal, title="Add Item to Todo"):
     text_input = TextInput(label="Item to add", style=discord.TextStyle.short,
@@ -16,24 +18,36 @@ class ItemForm(Modal, title="Add Item to Todo"):
 
     async def on_submit(self, interaction: discord.Interaction):
         todo_threads[interaction.channel.id].add(self.text_input.value)
-        await interaction.response.send_message("Added to to-do list!", delete_after=10)
+        await interaction.response.send_message("Added!", ephemeral=True, delete_after=1)
         await display_todo_embed(todo_threads[interaction.channel.id])
 
 
-async def create_embed(thread: discord.Thread) -> TodoItem:
+async def create_embed(user: discord.User, thread: discord.Thread, todo_item: Optional[TodoItem] = None) -> TodoItem:
     todo_embed = discord.Embed(
         title="Study Session (beta)",
-        description="Type into the thread to add to your to-do list. Use `!rm` to remove from the list by name or "
-                    "number.",
+        description="Click the 'Add Item' button to add to your to-do list. Use `!rm` to remove from the list by name "
+                    "or number.",
     )
     todo_embed.add_field(name="To-do List", value="")
-    todo_msg = await thread.send(embed=todo_embed)
     todo_view = View()
-    todo_item = TodoItem(embed=todo_embed, view=todo_view, message=todo_msg)
-    todo_threads[thread.id] = todo_item
-    todo = todo_item.get_todo()
 
-    await display_todo_embed(todo_item)
+    next_button = Button(label="Next", style=discord.ButtonStyle.blurple)
+    back_button = Button(label="Back", style=discord.ButtonStyle.grey)
+    add_item = Button(label="Add Item", style=discord.ButtonStyle.green)
+    todo_view.add_item(back_button)
+    todo_view.add_item(next_button)
+    todo_view.add_item(add_item)
+
+    if todo_item is None:
+        todo_msg = await thread.send(embed=todo_embed)
+        todo_item = TodoItem(embed=todo_embed, view=todo_view, message=todo_msg, user=user)
+        todo_threads[thread.id] = todo_item
+        back_button.disabled = True
+        next_button.disabled = True
+    else:
+        todo_item.update(embed=todo_embed, view=todo_view)
+
+    todo = todo_item.get_todo()
 
     async def next_button_callback(interaction: discord.Interaction):
         todo_item.next_page()
@@ -52,17 +66,12 @@ async def create_embed(thread: discord.Thread) -> TodoItem:
         await interaction.response.edit_message(embed=todo_item.get_embed(), view=todo_view)
 
     async def add_item_callback(interaction: discord.Interaction):
-        await interaction.response.send_modal(ItemForm())
-        await display_todo_embed(todo_item)
-
-    next_button = Button(label="Next", style=discord.ButtonStyle.blurple)
-    back_button = Button(label="Back", style=discord.ButtonStyle.grey)
-    add_item = Button(label="Add Item", style=discord.ButtonStyle.green)
-    todo_view.add_item(back_button)
-    todo_view.add_item(next_button)
-    todo_view.add_item(add_item)
-    back_button.disabled = True
-    next_button.disabled = True
+        if interaction.user == todo_item.user:
+            await interaction.response.send_modal(ItemForm())
+            await display_todo_embed(todo_item)
+        else:
+            await interaction.response.send_message("You must be the owner of this to-do list to add to it.",
+                                                    ephemeral=True)
 
     next_button.callback = next_button_callback
     back_button.callback = back_button_callback
@@ -76,7 +85,7 @@ class Study(commands.Cog):
         self.bot = bot
 
     async def study_timer(self, ctx, minutes: int, thread: discord.Thread):
-        todo_item = await create_embed(thread)
+        todo_item = await create_embed(ctx.author, thread)
         await display_todo_embed(todo_item)
 
         timer_embed = discord.Embed(title="Pomodoro Timer")
@@ -110,6 +119,7 @@ class Study(commands.Cog):
                     continue
 
         async def timer(value):
+            update_embed = value / 60
             try:
                 while value != 0:
                     await asyncio.sleep(1)
@@ -120,6 +130,10 @@ class Study(commands.Cog):
                                              name="Timer",
                                              value=str(mins) + ":" + "{:02}".format(sec) + " minutes remaining.")
                     await timer_msg.edit(embed=timer_embed)
+                    if sec == 0 and mins == update_embed - 3:
+                        await create_embed(ctx.author, thread, todo_item)
+                        await display_todo_embed(todo_item)
+                        update_embed -= 3
             except discord.NotFound:
                 return
 
@@ -165,8 +179,9 @@ class Study(commands.Cog):
         sessions = await self.study_timer(ctx, minutes, thread)
         add = minutes * sessions * 8
         cookies = update_cookies(ctx.guild.id, ctx.author.id, add)
-        await ctx.send(ctx.author.mention + f". `{sessions}` study sessions completed. You earned **{add}** cookies. "
+        await ctx.send(ctx.author.mention + f". `{sessions}` study session(s) completed. You earned **{add}** cookies. "
                                             f"You now have **{cookies}** cookies in your bank.")
+
 
 async def setup(bot):
     await bot.add_cog(Study(bot))

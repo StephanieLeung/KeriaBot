@@ -48,6 +48,7 @@ async def handle_bjack_scores(ctx, bet, pscore, dscore):
     cookies = update_cookies(ctx.guild.id, ctx.author.id, add)
     cookie_msg = ". "
     if add < 0:
+        add = abs(add)
         cookie_msg += "You lost **" + str(add) + "** cookies. "
     elif add > 0:
         cookie_msg += "You won **" + str(add) + "** cookies. "
@@ -124,12 +125,11 @@ class Blackjack(commands.Cog):
     @bjack.error
     async def bjack_error(self, ctx, error):
         if isinstance(error, commands.MissingRequiredArgument):
-            await ctx.send('Incorrect arguments entered. Please enter a bet number.')
+            await ctx.send('Incorrect arguments entered. Please enter a bet number.',
+                           ephemeral=True)
         elif isinstance(error, commands.BadArgument):
-            await ctx.send("Please enter a number as bet.")
-        else:
-            logging.warning("An error occured while running bjack." + str(error))
-            await ctx.send("Oops. Something went wrong. Try again later.")
+            await ctx.send("Please enter a number as bet.",
+                           ephemeral=True)
 
     @commands.hybrid_command(name="multibjack", aliases=['mbjack'])
     async def multi_bjack(self, ctx):

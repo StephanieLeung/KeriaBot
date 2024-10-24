@@ -35,7 +35,8 @@ def check_for_restricted(ctx):
 @bot.event
 async def on_command_error(ctx, error):
     if isinstance(error, commands.CheckFailure):
-        await ctx.send(f"Sorry, you don't have permission to use this command right now.", ephemeral=True, delete_after=10)
+        await ctx.send(f"Sorry, you don't have permission to use this command right now.",
+                       ephemeral=True, delete_after=20)
     else:
         return
 
